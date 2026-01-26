@@ -1,67 +1,125 @@
 import { db } from '../config/firebase';
-import { PremiumUser } from '../types/user';
-import { addDays } from '../utils/helpers';
-import { CONSTANTS } from '../utils/constants';
 
-// Кеш premium користувачів
-const premiumCache = new Set<string>();
+interface UserBalance {
+  userId: string;
+  paidMessages: number;
+  createdAt: Date;
+  lastUpdate: Date;
+}
 
-export const premiumService = {
-  // Завантажити premium юзерів при старті
-  async loadPremiumUsers(): Promise<void> {
+// In-memory кеш для швидкого доступу
+const balanceCache = new Map<string, UserBalance>();
+
+export const userBalanceService = {
+  // Завантажити всі баланси при старті
+  async loadAllBalances(): Promise<void> {
     try {
-      const snapshot = await db
-        .collection('premiumUsers')
-        .where('isPremium', '==', true)
-        .get();
+      const snapshot = await db.collection('users').get();
 
-      const now = new Date();
       snapshot.forEach((doc) => {
-        const data = doc.data() as PremiumUser;
-        // Перевіряємо expiresAt в коді, а не в запиті (щоб уникнути composite index)
-        if (data.expiresAt) {
-          const expiryDate = data.expiresAt instanceof Date
-            ? data.expiresAt
-            : data.expiresAt.toDate();
-
-          if (expiryDate > now) {
-            premiumCache.add(doc.id);
-          }
-        }
+        const data = doc.data();
+        balanceCache.set(doc.id, {
+          userId: doc.id,
+          paidMessages: data.paidMessages || 0,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          lastUpdate: data.lastUpdate?.toDate() || new Date(),
+        });
       });
 
-      console.log(`✅ Завантажено ${premiumCache.size} premium користувачів`);
+      console.log(`✅ Завантажено ${balanceCache.size} користувачів з балансами`);
     } catch (error) {
-      console.error('❌ Помилка завантаження premium:', error);
-      // Якщо помилка - продовжуємо роботу без premium користувачів
+      console.error('❌ Помилка завантаження балансів:', error);
     }
   },
 
-  // Перевірка чи юзер premium
-  isPremium(userId: string): boolean {
-    return premiumCache.has(userId.toString());
+  // Отримати баланс платних постів
+  async getPaidBalance(userId: string): Promise<number> {
+    // Спочатку з кешу
+    const cached = balanceCache.get(userId);
+    if (cached) {
+      return cached.paidMessages;
+    }
+
+    // Якщо немає в кеші - з Firestore
+    try {
+      const doc = await db.collection('users').doc(userId).get();
+      if (doc.exists) {
+        const data = doc.data();
+        const balance: UserBalance = {
+          userId,
+          paidMessages: data?.paidMessages || 0,
+          createdAt: data?.createdAt?.toDate() || new Date(),
+          lastUpdate: data?.lastUpdate?.toDate() || new Date(),
+        };
+        balanceCache.set(userId, balance);
+        return balance.paidMessages;
+      }
+    } catch (error) {
+      console.error('❌ Помилка отримання балансу:', error);
+    }
+
+    return 0;
   },
 
-  // Додати premium
-  async addPremium(userId: string): Promise<void> {
-    const now = new Date();
-    const expiresAt = addDays(now, CONSTANTS.PREMIUM_DURATION_DAYS);
+  // Додати платні пости (після оплати)
+  async addPaidMessages(userId: string, count: number): Promise<void> {
+    try {
+      const current = await this.getPaidBalance(userId);
+      const newBalance = current + count;
 
-    const userData = {
-      userId: userId.toString(),
-      isPremium: true,
-      paidAt: now,
-      expiresAt: expiresAt,
-    };
+      await db.collection('users').doc(userId).set({
+        userId,
+        paidMessages: newBalance,
+        lastUpdate: new Date(),
+        createdAt: balanceCache.get(userId)?.createdAt || new Date(),
+      });
 
-    await db.collection('premiumUsers').doc(userId.toString()).set(userData);
-    premiumCache.add(userId.toString());
+      // Оновлюємо кеш
+      balanceCache.set(userId, {
+        userId,
+        paidMessages: newBalance,
+        createdAt: balanceCache.get(userId)?.createdAt || new Date(),
+        lastUpdate: new Date(),
+      });
 
-    console.log(`✅ Premium додано для ${userId} до ${expiresAt.toLocaleDateString()}`);
+      console.log(`💰 User ${userId}: +${count} платних постів (всього: ${newBalance})`);
+    } catch (error) {
+      console.error('❌ Помилка додавання балансу:', error);
+      throw error;
+    }
   },
 
-  // Видалити premium
-  removePremium(userId: string): void {
-    premiumCache.delete(userId.toString());
+  // Використати 1 платний пост
+  async usePaidMessage(userId: string): Promise<boolean> {
+    const current = await this.getPaidBalance(userId);
+
+    if (current <= 0) {
+      return false; // Немає платних постів
+    }
+
+    try {
+      const newBalance = current - 1;
+
+      await db.collection('users').doc(userId).set({
+        userId,
+        paidMessages: newBalance,
+        lastUpdate: new Date(),
+        createdAt: balanceCache.get(userId)?.createdAt || new Date(),
+      });
+
+      // Оновлюємо кеш
+      balanceCache.set(userId, {
+        userId,
+        paidMessages: newBalance,
+        createdAt: balanceCache.get(userId)?.createdAt || new Date(),
+        lastUpdate: new Date(),
+      });
+
+      console.log(`📤 User ${userId}: використано платний пост (залишилось: ${newBalance})`);
+      return true;
+    } catch (error) {
+      console.error('❌ Помилка використання балансу:', error);
+      return false;
+    }
   },
 };

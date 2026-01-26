@@ -6,15 +6,22 @@ interface ModerationResult {
 }
 
 export const moderationService = {
-  async moderateText(text: string): Promise<ModerationResult> {
+  async moderateText( text: string ): Promise<ModerationResult> {
     try {
       const prompt = `Ти модеруєш український канал обміну валют та криптовалют.
 
 ДОЗВОЛЕНО (пропускай):
 - Оголошення про обмін USD, EUR, UAH, PLN, крипти (BTC, USDT тощо)
 - Навіть якщо КАПС, багато смайлів 💰💵💸, крикливий текст
-- Курси валют, контакти (@username, номери телефонів)
-- Локації обміну (Київ, Львів тощо)
+- Курси валют, локації обміну (Київ, Львів тощо)
+
+ОБОВ'ЯЗКОВА ВИМОГА:
+- У тексті ОБОВ'ЯЗКОВО має бути контакт для зв'язку:
+  * @username (Telegram)
+  * Номер телефону (+380...)
+  * Email
+  * Інший месенджер з контактом
+- Якщо контакту НЕМАЄ → allowed: false, reason: "Відсутні контактні дані"
 
 ЗАБОРОНЕНО (блокуй):
 - Порнографія, 18+ контент
@@ -24,28 +31,28 @@ export const moderationService = {
 - Спам не про обмін валют
 
 Текст для перевірки:
-"${text}"
+"${ text }"
 
 Відповідь ТІЛЬКИ JSON без markdown:
 {"allowed": true/false, "reason": "коротка причина українською"}`;
 
-      const response = await genAI.models.generateContent({
-        model: 'gemini-1.5-flash',
+      const response = await genAI.models.generateContent( {
+        model: 'gemini-2.5-flash-lite',
         contents: prompt,
-      });
+      } );
 
       const responseText = response.text || '';
 
       // Видаляємо markdown блоки якщо є
-      const cleanResponse = responseText.replace(/```json\n?|\n?```/g, '').trim();
-      const parsed = JSON.parse(cleanResponse);
+      const cleanResponse = responseText.replace( /```json\n?|\n?```/g, '' ).trim();
+      const parsed = JSON.parse( cleanResponse );
 
       return {
         allowed: parsed.allowed,
         reason: parsed.reason || '',
       };
-    } catch (error) {
-      console.error('❌ Помилка модерації:', error);
+    } catch ( error ) {
+      console.error( '❌ Помилка модерації:', error );
       // У разі помилки - дозволяємо (щоб не блокувати всіх)
       return { allowed: true, reason: 'Помилка перевірки' };
     }
