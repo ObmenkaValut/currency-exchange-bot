@@ -1,92 +1,121 @@
 import { Context } from 'grammy';
-import { moderationService } from '../services/moderation';
 import { userBalanceService } from '../services/premium';
+import { cryptoBotService } from '../services/cryptoBot';
 import { userStates } from './commands';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-if (!process.env.GROUP_ID) {
-  throw new Error('❌ GROUP_ID не знайдено в .env');
-}
-const GROUP_ID = process.env.GROUP_ID;
-
-// Текст правил для посту (використовується двічі)
-const POST_RULES = `📋 ПРАВИЛА ДЛЯ ПОСТУ:
-
-1️⃣ Тільки про обмін валют/криптовалюти
-2️⃣ ОБОВ'ЯЗКОВО вкажи контакт:
-   • @username (Telegram)
-   • Номер телефону
-   • Email або інший спосіб зв'язку
-
-❌ Без контактів пост НЕ ПРОЙДЕ модерацію!
-
-📝 Надішли текст свого оголошення:`;
+import { getPostWord, formatPrice } from '../config/constants';
 
 export function registerPayments(bot: any) {
-  // Пакети постів
-  const packages = [
-    { count: 1, callback: 'buy_1' },
-    { count: 3, callback: 'buy_3' },
-    { count: 5, callback: 'buy_5' },
-    { count: 10, callback: 'buy_10' },
-    { count: 20, callback: 'buy_20' },
-    { count: 50, callback: 'buy_50' },
-    { count: 100, callback: 'buy_100' },
-  ];
-
-  // Реєструємо callback для кожного пакету
-  packages.forEach(({ count, callback }) => {
-    bot.callbackQuery(callback, async (ctx: Context) => {
-      await ctx.answerCallbackQuery();
-      const userId = ctx.from?.id;
-      if (!userId) return;
-
-      // Встановлюємо стан з інфо про пакет
-      userStates.set(userId, {
-        step: 'awaiting_payment',
-        packageCount: count
-      });
-
-      // Створюємо інвойс
-      try {
-        await ctx.replyWithInvoice(
-          `Пакет: ${count} ${count === 1 ? 'пост' : count < 5 ? 'пости' : 'постів'}`,
-          `Платні пости у групу (з емодзі та модерацією)`,
-          JSON.stringify({ userId, count }),
-          'XTR',
-          [{ label: `${count} ${count === 1 ? 'пост' : 'постів'}`, amount: count }]
-        );
-      } catch (error) {
-        console.error('❌ Помилка інвойсу:', error);
-        await ctx.reply('❌ Помилка створення інвойсу. Спробуй /buy знову');
-        userStates.delete(userId);
+  // Callback: Вибір Stars - показуємо пакети для Stars
+  bot.callbackQuery('method_stars', async (ctx: Context) => {
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+      '⭐ Telegram Stars\n\n' +
+      'Обери пакет:',
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '1 пост — 1 ⭐', callback_data: 'stars_1' }],
+            [{ text: '3 пости — 3 ⭐', callback_data: 'stars_3' }],
+            [{ text: '5 постів — 5 ⭐', callback_data: 'stars_5' }],
+            [{ text: '10 постів — 10 ⭐', callback_data: 'stars_10' }],
+            [{ text: '20 постів — 20 ⭐', callback_data: 'stars_20' }],
+            [{ text: '50 постів — 50 ⭐', callback_data: 'stars_50' }],
+            [{ text: '100 постів — 100 ⭐', callback_data: 'stars_100' }],
+          ]
+        }
       }
-    });
+    );
   });
 
-  // Callback: "Написати пост" (коли є баланс платних постів)
-  bot.callbackQuery('write_post', async (ctx: Context) => {
+  // Callback: Вибір CryptoBot - показуємо пакети для CryptoBot
+  bot.callbackQuery('method_crypto', async (ctx: Context) => {
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+      '💎 CryptoBot (USDT/TON/BTC)\n\n' +
+      'Обери пакет:',
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '1 пост — $0.01', callback_data: 'crypto_1' }],
+            [{ text: '3 пости — $0.03', callback_data: 'crypto_3' }],
+            [{ text: '5 постів — $0.05', callback_data: 'crypto_5' }],
+            [{ text: '10 постів — $0.10', callback_data: 'crypto_10' }],
+            [{ text: '20 постів — $0.20', callback_data: 'crypto_20' }],
+            [{ text: '50 постів — $0.50', callback_data: 'crypto_50' }],
+            [{ text: '100 постів — $1.00', callback_data: 'crypto_100' }],
+          ]
+        }
+      }
+    );
+  });
+
+  // Callback: Оплата через Telegram Stars
+  bot.callbackQuery(/^stars_(\d+)$/, async (ctx: Context) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    // Перевіряємо баланс
-    const balance = await userBalanceService.getPaidBalance(userId.toString());
+    const match = ctx.callbackQuery?.data?.match(/^stars_(\d+)$/);
+    const count = match ? parseInt(match[1], 10) : 1;
 
-    if (balance <= 0) {
-      await ctx.reply('❌ У тебе немає платних постів. Використай /buy');
-      return;
+    // Встановлюємо стан
+    userStates.set(userId, {
+      step: 'awaiting_payment',
+      packageCount: count
+    });
+
+    // Створюємо Telegram Stars інвойс
+    try {
+      const postWord = getPostWord(count);
+      await ctx.replyWithInvoice(
+        `Пакет: ${count} ${postWord}`,
+        `Платні пости у групу (з емодзі та модерацією)`,
+        JSON.stringify({ userId, count }),
+        'XTR',
+        [{ label: `${count} ${postWord}`, amount: count }]
+      );
+    } catch (error) {
+      console.error('❌ Помилка Stars інвойсу:', error);
+      await ctx.reply('❌ Помилка створення інвойсу. Спробуй ще раз');
+      userStates.delete(userId);
     }
-
-    // Встановлюємо стан - чекаємо текст
-    userStates.set(userId, { step: 'awaiting_text', paid: true });
-
-    await ctx.reply(POST_RULES);
-
-    console.log(`✍️ User ${userId} почав писати платний пост`);
   });
+
+  // Callback: Оплата через CryptoBot
+  bot.callbackQuery(/^crypto_(\d+)$/, async (ctx: Context) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.from?.id;
+    if (!userId) return;
+
+    const match = ctx.callbackQuery?.data?.match(/^crypto_(\d+)$/);
+    const count = match ? parseInt(match[1], 10) : 1;
+
+    await ctx.reply('💎 Створюю інвойс CryptoBot...');
+
+    // Створюємо CryptoBot інвойс
+    const payUrl = await cryptoBotService.createInvoice(userId, count);
+
+    if (payUrl) {
+      const postWord = getPostWord(count);
+      await ctx.reply(
+        `💎 Інвойс створено!\n\n` +
+        `📦 Пакет: ${count} ${postWord}\n` +
+        `💰 Сума: ${formatPrice(count)}\n\n` +
+        `Натисни кнопку нижче для оплати:`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '💳 Оплатити через CryptoBot', url: payUrl }]
+            ]
+          }
+        }
+      );
+    } else {
+      await ctx.reply('❌ Помилка створення інвойсу. Спробуй ще раз або обери Telegram Stars');
+    }
+  });
+
+
 
   // Pre-checkout
   bot.on('pre_checkout_query', async (ctx: Context) => {
@@ -107,83 +136,13 @@ export function registerPayments(bot: any) {
     // Додаємо платні пости до балансу
     await userBalanceService.addPaidMessages(userId.toString(), count);
 
-    // Встановлюємо стан - чекаємо текст
-    userStates.set(userId, { step: 'awaiting_text', paid: true });
+    const postWord = getPostWord(count);
+    await ctx.reply(
+      `✅ Оплата успішна!\n\n` +
+      `Додано ${count} ${postWord} до балансу!\n\n` +
+      `📊 Перевір статистику /start`
+    );
 
-    const postWord = count === 1 ? 'пост' : count < 5 ? 'пости' : 'постів';
-    await ctx.reply(`✅ Оплата успішна! Додано ${count} ${postWord}!\n\n${POST_RULES}`);
-
-    console.log(`✅ Стан для ${userId}:`, userStates.get(userId));
+    console.log(`✅ Баланс ${userId}: +${count} постів`);
   });
-}
-
-// Обробка текстових повідомлень в ПРИВАТНОМУ чаті
-export async function handlePrivateMessage(ctx: Context) {
-  if (ctx.chat?.type !== 'private') return; // Тільки приватні
-  if (ctx.message?.text?.startsWith('/')) return; // Ігноруємо команди
-
-  const userId = ctx.from?.id;
-  if (!userId) return;
-
-  const text = ctx.message?.text;
-  console.log(`📨 Private message від ${userId}: "${text}"`);
-
-  const state = userStates.get(userId);
-  console.log(`📊 State:`, state);
-
-  // Якщо юзер оплатив і чекаємо текст
-  if (state?.step === 'awaiting_text' && state.paid) {
-    if (!text) return;
-
-    // СПОЧАТКУ перевіряємо баланс (захист від race condition)
-    const balance = await userBalanceService.getPaidBalance(userId.toString());
-    if (balance <= 0) {
-      await ctx.reply('❌ У тебе немає платних постів. Використай /buy');
-      userStates.delete(userId);
-      return;
-    }
-
-    // Модерація
-    await ctx.reply('🔍 Перевіряю текст через AI...');
-    const modResult = await moderationService.moderateText(text);
-
-    if (!modResult.allowed) {
-      await ctx.reply(
-        `❌ Текст не пройшов модерацію\n\n` +
-        `Причина: ${modResult.reason}\n\n` +
-        `💡 Переписуй і надсилай заново`
-      );
-      return; // Стан залишається - юзер може переписати
-    }
-
-    // СПОЧАТКУ списуємо баланс, ПОТІМ публікуємо (захист від спаму)
-    const used = await userBalanceService.usePaidMessage(userId.toString());
-    if (!used) {
-      await ctx.reply('❌ Не вдалось використати платний пост. Спробуй /buy');
-      userStates.delete(userId);
-      return;
-    }
-
-    // Текст OK — публікуємо
-    try {
-      await ctx.api.sendMessage(GROUP_ID, text);
-      await ctx.reply('✅ Опубліковано в групі!');
-      userStates.delete(userId);
-      console.log(`📤 Пост від ${userId} опубліковано`);
-    } catch (error) {
-      console.error('❌ Помилка публікації:', error);
-      // Повертаємо баланс якщо публікація не вдалась
-      await userBalanceService.addPaidMessages(userId.toString(), 1);
-      await ctx.reply('❌ Помилка публікації. Баланс повернуто. Спробуй ще.');
-    }
-
-    return;
-  }
-
-  // Якщо юзер пише без /buy
-  console.log(`⚠️ User ${userId} пише без /buy або не оплатив`);
-  await ctx.reply(
-    '👋 Привіт!\n\n' +
-    'Щоб опублікувати платний пост, використай команду /buy'
-  );
 }

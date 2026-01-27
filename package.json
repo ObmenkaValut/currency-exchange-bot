@@ -15,10 +15,12 @@
   "dependencies": {
     "@google/genai": "^1.38.0",
     "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "firebase-admin": "^13.6.0",
     "grammy": "^1.39.3"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.0.10",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
