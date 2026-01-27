@@ -1,5 +1,6 @@
 import { Context } from 'grammy';
 import { limiterService } from '../services/limiter';
+import { userBalanceService } from '../services/premium';
 
 // Зберігаємо стан користувача
 const userStates = new Map<number, {
@@ -8,22 +9,38 @@ const userStates = new Map<number, {
   packageCount?: number;
 }>();
 
+// Reply Keyboard (постійні кнопки знизу)
+const mainKeyboard = {
+  keyboard: [
+    [{ text: '💰 Купити пост' }, { text: '📊 Статистика' }],
+    [{ text: 'ℹ️ Допомога' }],
+  ],
+  resize_keyboard: true,  // Компактний розмір
+  is_persistent: true,    // Не ховається після натискання
+};
+
 export function registerCommands(bot: any) {
-  // /start - привітання
+  // /start - привітання з клавіатурою
   bot.command('start', async (ctx: Context) => {
+    const userId = ctx.from?.id;
+    if (userId) {
+      await userBalanceService.ensureUserExists(userId.toString());
+    }
+
     await ctx.reply(
       `👋 Привіт!\n\n` +
       `Я бот для публікації оголошень у групі.\n\n` +
       `📝 Як працює:\n` +
       `• Кожен може писати 3 повідомлення/день безкоштовно\n` +
-      `• Хочеш більше? Використай /buy\n` +
-      `• Емодзі заборонені (або купи через /buy)\n\n` +
-      `Команди: /help /mystats /buy`
+      `• Хочеш більше? Натисни «💰 Купити пост»\n` +
+      `• Емодзі заборонені (або купи платний пост)\n\n` +
+      `👇 Використовуй кнопки нижче:`,
+      { reply_markup: mainKeyboard }
     );
   });
 
-  // /help - пояснення
-  bot.command('help', async (ctx: Context) => {
+  // Кнопка "ℹ️ Допомога"
+  bot.hears('ℹ️ Допомога', async (ctx: Context) => {
     await ctx.reply(
       `ℹ️ Довідка\n\n` +
       `🎯 Що я роблю:\n` +
@@ -33,32 +50,27 @@ export function registerCommands(bot: any) {
       `• Емодзі заборонені в безкоштовних постах\n` +
       `• Тільки теми про обмін валют/крипти\n\n` +
       `💰 Платні пости:\n` +
-      `• /buy - купити платний пост (1 ⭐ = 1 пост)\n` +
+      `• Натисни «💰 Купити пост»\n` +
+      `• 1 ⭐ = 1 пост\n` +
       `• Емодзі дозволені\n` +
-      `• Без ліміту\n` +
-      `• Модерація через AI\n\n` +
-      `📊 /mystats - твоя статистика`
+      `• Модерація через AI`
     );
   });
 
-  // /mystats - статистика
-  bot.command('mystats', async (ctx: Context) => {
+  // Кнопка "📊 Статистика"
+  bot.hears('📊 Статистика', async (ctx: Context) => {
     const userId = ctx.from?.id;
     if (!userId) return;
 
     const freeCount = limiterService.getCount(userId.toString());
-
-    // Імпортуємо userBalanceService
-    const { userBalanceService } = await import('../services/premium');
     const paidBalance = await userBalanceService.getPaidBalance(userId.toString());
 
     const status = `📊 Твоя статистика:\n\n` +
       `📝 Безкоштовних постів сьогодні: ${freeCount}/3\n` +
       `💎 Платних постів: ${paidBalance}\n` +
-      `📅 Безкоштовні оновляться завтра\n\n` +
-      `💡 Хочеш більше? Використай /buy (1 ⭐ = 1 пост)`;
+      `📅 Безкоштовні оновляться завтра`;
 
-    // Якщо є платні пости - показуємо кнопку
+    // Якщо є платні пости - показуємо кнопку "Написати пост"
     if (paidBalance > 0) {
       await ctx.reply(status, {
         reply_markup: {
@@ -68,16 +80,15 @@ export function registerCommands(bot: any) {
         }
       });
     } else {
-      await ctx.reply(status);
+      await ctx.reply(status + `\n\n💡 Хочеш більше? Натисни «💰 Купити пост»`);
     }
   });
 
-  // /buy - купити платний пост
-  bot.command('buy', async (ctx: Context) => {
+  // Кнопка "💰 Купити пост"
+  bot.hears('💰 Купити пост', async (ctx: Context) => {
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    // Показуємо меню пакетів
     await ctx.reply(
       '💰 Обери пакет платних постів:\n\n' +
       '1 ⭐ = 1 пост',
@@ -97,14 +108,38 @@ export function registerCommands(bot: any) {
     );
   });
 
-  // /reset (для тестів)
+  // /reset - для адмінів групи (прихована команда)
   bot.command('reset', async (ctx: Context) => {
     const userId = ctx.from?.id;
-    if (!userId) return;
+    const chatId = ctx.chat?.id;
 
-    limiterService.reset(userId.toString());
-    userStates.delete(userId);
-    await ctx.reply('✅ Ліміт та стан скинуто!');
+    if (!userId || !chatId) return;
+
+    try {
+      const member = await ctx.getChatMember(userId);
+
+      if (!['creator', 'administrator'].includes(member.status)) {
+        await ctx.reply('❌ Ця команда доступна тільки адмінам групи');
+        return;
+      }
+
+      const args = ctx.message?.text?.split(' ');
+      const targetId = args && args[1] ? args[1] : userId.toString();
+
+      limiterService.reset(targetId);
+      userStates.delete(Number(targetId));
+
+      if (targetId === userId.toString()) {
+        await ctx.reply('✅ Твій ліміт скинуто!');
+      } else {
+        await ctx.reply(`✅ Ліміт скинуто для користувача ${targetId}`);
+      }
+
+      console.log(`🔄 Адмін ${userId} скинув ліміт для ${targetId}`);
+    } catch (error) {
+      console.error('❌ Помилка reset:', error);
+      await ctx.reply('❌ Помилка. Ця команда працює тільки в групі.');
+    }
   });
 }
 

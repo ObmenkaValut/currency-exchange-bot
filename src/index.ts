@@ -12,12 +12,9 @@ async function start() {
   // Завантажуємо баланси користувачів з Firestore
   await userBalanceService.loadAllBalances();
 
-  // Встановлюємо список команд для меню
+  // Тільки команда /start в меню
   await bot.api.setMyCommands([
-    { command: 'start', description: 'Почати роботу' },
-    { command: 'help', description: 'Допомога' },
-    { command: 'mystats', description: 'Моя статистика' },
-    { command: 'buy', description: 'Купити платний пост' },
+    { command: 'start', description: 'Перезапуск бота' },
   ]);
   console.log('✅ Команди оновлено');
 

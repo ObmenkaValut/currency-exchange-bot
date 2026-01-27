@@ -1,6 +1,6 @@
 import { Context } from 'grammy';
 import { moderationService } from '../services/moderation';
-// import { CONSTANTS } from '../utils/constants';
+import { userBalanceService } from '../services/premium';
 import { userStates } from './commands';
 import dotenv from 'dotenv';
 
@@ -9,7 +9,20 @@ dotenv.config();
 if (!process.env.GROUP_ID) {
   throw new Error('❌ GROUP_ID не знайдено в .env');
 }
-const GROUP_ID: string = process.env.GROUP_ID;
+const GROUP_ID = process.env.GROUP_ID;
+
+// Текст правил для посту (використовується двічі)
+const POST_RULES = `📋 ПРАВИЛА ДЛЯ ПОСТУ:
+
+1️⃣ Тільки про обмін валют/криптовалюти
+2️⃣ ОБОВ'ЯЗКОВО вкажи контакт:
+   • @username (Telegram)
+   • Номер телефону
+   • Email або інший спосіб зв'язку
+
+❌ Без контактів пост НЕ ПРОЙДЕ модерацію!
+
+📝 Надішли текст свого оголошення:`;
 
 export function registerPayments(bot: any) {
   // Пакети постів
@@ -60,7 +73,6 @@ export function registerPayments(bot: any) {
     if (!userId) return;
 
     // Перевіряємо баланс
-    const { userBalanceService } = await import('../services/premium');
     const balance = await userBalanceService.getPaidBalance(userId.toString());
 
     if (balance <= 0) {
@@ -71,16 +83,7 @@ export function registerPayments(bot: any) {
     // Встановлюємо стан - чекаємо текст
     userStates.set(userId, { step: 'awaiting_text', paid: true });
 
-    await ctx.reply(
-      '📋 ПРАВИЛА ДЛЯ ПОСТУ:\n\n' +
-      '1️⃣ Тільки про обмін валют/криптовалюти\n' +
-      '2️⃣ ОБОВ\'ЯЗКОВО вкажи контакт:\n' +
-      '   • @username (Telegram)\n' +
-      '   • Номер телефону\n' +
-      '   • Email або інший спосіб зв\'язку\n\n' +
-      '❌ Без контактів пост НЕ ПРОЙДЕ модерацію!\n\n' +
-      '📝 Надішли текст свого оголошення:'
-    );
+    await ctx.reply(POST_RULES);
 
     console.log(`✍️ User ${userId} почав писати платний пост`);
   });
@@ -101,24 +104,14 @@ export function registerPayments(bot: any) {
 
     console.log(`💰 Оплата від ${userId} - додаємо +${count} платних постів`);
 
-    // Додаємо платні пости до балансу в Firestore
-    const { userBalanceService } = await import('../services/premium');
+    // Додаємо платні пости до балансу
     await userBalanceService.addPaidMessages(userId.toString(), count);
 
     // Встановлюємо стан - чекаємо текст
     userStates.set(userId, { step: 'awaiting_text', paid: true });
 
-    await ctx.reply(
-      `✅ Оплата успішна! Додано ${count} ${count === 1 ? 'пост' : count < 5 ? 'пости' : 'постів'}!\n\n` +
-      '📋 ПРАВИЛА ДЛЯ ПОСТУ:\n\n' +
-      '1️⃣ Тільки про обмін валют/криптовалюти\n' +
-      '2️⃣ ОБОВ\'ЯЗКОВО вкажи контакт:\n' +
-      '   • @username (Telegram)\n' +
-      '   • Номер телефону\n' +
-      '   • Email або інший спосіб зв\'язку\n\n' +
-      '❌ Без контактів пост НЕ ПРОЙДЕ модерацію!\n\n' +
-      '📝 Тепер надішли текст свого оголошення:'
-    );
+    const postWord = count === 1 ? 'пост' : count < 5 ? 'пости' : 'постів';
+    await ctx.reply(`✅ Оплата успішна! Додано ${count} ${postWord}!\n\n${POST_RULES}`);
 
     console.log(`✅ Стан для ${userId}:`, userStates.get(userId));
   });
@@ -142,6 +135,14 @@ export async function handlePrivateMessage(ctx: Context) {
   if (state?.step === 'awaiting_text' && state.paid) {
     if (!text) return;
 
+    // СПОЧАТКУ перевіряємо баланс (захист від race condition)
+    const balance = await userBalanceService.getPaidBalance(userId.toString());
+    if (balance <= 0) {
+      await ctx.reply('❌ У тебе немає платних постів. Використай /buy');
+      userStates.delete(userId);
+      return;
+    }
+
     // Модерація
     await ctx.reply('🔍 Перевіряю текст через AI...');
     const modResult = await moderationService.moderateText(text);
@@ -152,6 +153,14 @@ export async function handlePrivateMessage(ctx: Context) {
         `Причина: ${modResult.reason}\n\n` +
         `💡 Переписуй і надсилай заново`
       );
+      return; // Стан залишається - юзер може переписати
+    }
+
+    // СПОЧАТКУ списуємо баланс, ПОТІМ публікуємо (захист від спаму)
+    const used = await userBalanceService.usePaidMessage(userId.toString());
+    if (!used) {
+      await ctx.reply('❌ Не вдалось використати платний пост. Спробуй /buy');
+      userStates.delete(userId);
       return;
     }
 
@@ -159,18 +168,13 @@ export async function handlePrivateMessage(ctx: Context) {
     try {
       await ctx.api.sendMessage(GROUP_ID, text);
       await ctx.reply('✅ Опубліковано в групі!');
-
-      // Віднімаємо -1 платний пост
-      const { userBalanceService } = await import('../services/premium');
-      await userBalanceService.usePaidMessage(userId.toString());
-
-      // Очищаємо стан
       userStates.delete(userId);
-
       console.log(`📤 Пост від ${userId} опубліковано`);
     } catch (error) {
       console.error('❌ Помилка публікації:', error);
-      await ctx.reply('❌ Помилка публікації. Звернись до @support');
+      // Повертаємо баланс якщо публікація не вдалась
+      await userBalanceService.addPaidMessages(userId.toString(), 1);
+      await ctx.reply('❌ Помилка публікації. Баланс повернуто. Спробуй ще.');
     }
 
     return;
