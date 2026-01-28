@@ -25,6 +25,10 @@ export const MAX_MESSAGE_AGE = 5 * 60; // 5 хв (сек)
 export const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 год (мс)
 export const INVOICE_TTL = 24 * 60 * 60 * 1000; // 24 год (мс)
 
+// === Transactions ===
+export const TRANSACTION_RETENTION_DAYS = 30; // 30 днів
+export const TRANSACTION_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // Перевіряти раз на 1 добу
+
 // === Cache ===
 export const MAX_CACHE_SIZE = 10000;
 

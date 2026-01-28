@@ -242,4 +242,29 @@ export const userBalanceService = {
       console.error('❌ Ensure user:', error);
     }
   },
+
+  /** Видалити старі транзакції (старші N днів) */
+  async deleteOldTransactions(days: number): Promise<void> {
+    const limitDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    try {
+      const snapshot = await db
+        .collection('transactions')
+        .where('createdAt', '<', limitDate)
+        .limit(500) // Batch limit
+        .get();
+
+      if (snapshot.empty) {
+        return;
+      }
+
+      const batch = db.batch();
+      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+
+      console.log(`🧹 Deleted ${snapshot.size} old transactions (> ${days} days)`);
+    } catch (error) {
+      console.error('❌ Cleanup error:', error);
+    }
+  },
 };

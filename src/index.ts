@@ -11,7 +11,7 @@ import { registerPayments } from './handlers/payments';
 import { createWebhookRouter } from './handlers/webhook';
 import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { MAX_MESSAGE_AGE } from './config/constants';
+import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL } from './config/constants';
 
 // === Config ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -30,6 +30,17 @@ async function start() {
   console.log(`🚀 Starting... Mode: ${IS_PROD ? 'WEBHOOK' : 'POLLING'}`);
 
   await userBalanceService.loadAllBalances();
+
+
+  // Автоматичне очищення старих транзакцій
+  console.log(`🧹 Cleanup configured: keep ${TRANSACTION_RETENTION_DAYS} days, check every ${TRANSACTION_CLEANUP_INTERVAL / 1000 / 60} min`);
+
+  await userBalanceService.deleteOldTransactions(TRANSACTION_RETENTION_DAYS);
+  setInterval(() => {
+    console.log('🧹 Daily cleanup started...');
+    userBalanceService.deleteOldTransactions(TRANSACTION_RETENTION_DAYS);
+  }, TRANSACTION_CLEANUP_INTERVAL);
+
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 
   // === Middleware ===
