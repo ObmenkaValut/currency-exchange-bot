@@ -3,199 +3,139 @@ import { db } from '../config/firebase';
 interface UserBalance {
   userId: string;
   paidMessages: number;
-  totalSpent: number;      // Всього витрачено ⭐
-  totalPaidPosts: number;  // Всього опублікованих платних постів
+  totalSpent: number;
+  totalPaidPosts: number;
   createdAt: Date;
   lastUpdate: Date;
 }
 
-// In-memory кеш для швидкого доступу
-const balanceCache = new Map<string, UserBalance>();
+const cache = new Map<string, UserBalance>();
+
+/** Конвертує Firestore doc в UserBalance */
+const toBalance = (id: string, data: FirebaseFirestore.DocumentData): UserBalance => ({
+  userId: id,
+  paidMessages: data.paidMessages || 0,
+  totalSpent: data.totalSpent || 0,
+  totalPaidPosts: data.totalPaidPosts || 0,
+  createdAt: data.createdAt?.toDate() || new Date(),
+  lastUpdate: data.lastUpdate?.toDate() || new Date(),
+});
 
 export const userBalanceService = {
-  // Завантажити всі баланси при старті
+  /** Завантажити всі баланси при старті */
   async loadAllBalances(): Promise<void> {
     try {
       const snapshot = await db.collection('users').get();
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        balanceCache.set(doc.id, {
-          userId: doc.id,
-          paidMessages: data.paidMessages || 0,
-          totalSpent: data.totalSpent || 0,
-          totalPaidPosts: data.totalPaidPosts || 0,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          lastUpdate: data.lastUpdate?.toDate() || new Date(),
-        });
-      });
-
-      console.log(`✅ Завантажено ${balanceCache.size} користувачів`);
+      snapshot.forEach((doc) => cache.set(doc.id, toBalance(doc.id, doc.data())));
+      console.log(`✅ Завантажено ${cache.size} користувачів`);
     } catch (error) {
-      console.error('❌ Помилка завантаження:', error);
+      console.error('❌ Load error:', error);
     }
   },
 
-  // Отримати баланс платних постів
+  /** Отримати баланс */
   async getPaidBalance(userId: string): Promise<number> {
-    const cached = balanceCache.get(userId);
-    if (cached) {
-      return cached.paidMessages;
-    }
+    const cached = cache.get(userId);
+    if (cached) return cached.paidMessages;
 
     try {
       const doc = await db.collection('users').doc(userId).get();
       if (doc.exists) {
-        const data = doc.data();
-        balanceCache.set(userId, {
-          userId,
-          paidMessages: data?.paidMessages || 0,
-          totalSpent: data?.totalSpent || 0,
-          totalPaidPosts: data?.totalPaidPosts || 0,
-          createdAt: data?.createdAt?.toDate() || new Date(),
-          lastUpdate: data?.lastUpdate?.toDate() || new Date(),
-        });
-        return data?.paidMessages || 0;
+        const balance = toBalance(userId, doc.data()!);
+        cache.set(userId, balance);
+        return balance.paidMessages;
       }
     } catch (error) {
-      console.error('❌ Помилка отримання балансу:', error);
+      console.error('❌ Get balance:', error);
     }
-
     return 0;
   },
 
-  // Додати платні пости (АТОМАРНА ОПЕРАЦІЯ)
+  /** Додати пости (атомарно) */
   async addPaidMessages(userId: string, count: number): Promise<void> {
-    const userRef = db.collection('users').doc(userId);
+    if (!userId?.trim()) throw new Error('Invalid userId');
+    if (!Number.isInteger(count) || count <= 0) throw new Error('Invalid count');
 
-    try {
-      await db.runTransaction(async (transaction) => {
-        const doc = await transaction.get(userRef);
-        const data = doc.data() || {};
+    const ref = db.collection('users').doc(userId);
 
-        const current = data.paidMessages || 0;
-        const currentSpent = data.totalSpent || 0;
-        const createdAt = data.createdAt || new Date();
-        const newBalance = current + count;
+    await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const data = doc.data() || {};
 
-        transaction.set(userRef, {
-          userId,
-          paidMessages: newBalance,
-          totalSpent: currentSpent + count,
-          totalPaidPosts: data.totalPaidPosts || 0,
-          createdAt,
-          lastUpdate: new Date(),
-        });
-
-        // Оновлюємо кеш
-        balanceCache.set(userId, {
-          userId,
-          paidMessages: newBalance,
-          totalSpent: currentSpent + count,
-          totalPaidPosts: data.totalPaidPosts || 0,
-          createdAt: createdAt instanceof Date ? createdAt : createdAt.toDate(),
-          lastUpdate: new Date(),
-        });
+      tx.set(ref, {
+        userId,
+        paidMessages: (data.paidMessages || 0) + count,
+        totalSpent: (data.totalSpent || 0) + count,
+        totalPaidPosts: data.totalPaidPosts || 0,
+        createdAt: data.createdAt || new Date(),
+        lastUpdate: new Date(),
       });
+    });
 
-      console.log(`💰 User ${userId}: +${count} постів`);
-    } catch (error) {
-      console.error('❌ Помилка додавання:', error);
-      throw error;
-    }
+    // Sync cache
+    const doc = await ref.get();
+    if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
+    console.log(`💰 User ${userId}: +${count}`);
   },
 
-  // Використати 1 платний пост (АТОМАРНА ОПЕРАЦІЯ)
+  /** Використати 1 пост (атомарно) */
   async usePaidMessage(userId: string): Promise<boolean> {
-    const userRef = db.collection('users').doc(userId);
+    const ref = db.collection('users').doc(userId);
 
     try {
-      await db.runTransaction(async (transaction) => {
-        const doc = await transaction.get(userRef);
-
-        if (!doc.exists) {
-          throw new Error('User not found');
-        }
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(ref);
+        if (!doc.exists) throw new Error('User not found');
 
         const data = doc.data()!;
-        const current = data.paidMessages || 0;
-        const currentPosts = data.totalPaidPosts || 0;
+        if ((data.paidMessages || 0) <= 0) throw new Error('No balance');
 
-        if (current <= 0) {
-          throw new Error('No balance');
-        }
-
-        transaction.update(userRef, {
-          paidMessages: current - 1,
-          totalPaidPosts: currentPosts + 1,
+        tx.update(ref, {
+          paidMessages: data.paidMessages - 1,
+          totalPaidPosts: (data.totalPaidPosts || 0) + 1,
           lastUpdate: new Date(),
         });
-
-        // Оновлюємо кеш
-        const cached = balanceCache.get(userId);
-        if (cached) {
-          cached.paidMessages = current - 1;
-          cached.totalPaidPosts = currentPosts + 1;
-          cached.lastUpdate = new Date();
-        }
       });
 
-      console.log(`📤 User ${userId}: використано пост`);
+      // Sync cache
+      const doc = await ref.get();
+      if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
+      console.log(`📤 User ${userId}: used 1 post`);
       return true;
     } catch (error) {
-      if (error instanceof Error && error.message === 'No balance') {
-        return false;
-      }
-      console.error('❌ Помилка:', error);
+      if (error instanceof Error && error.message === 'No balance') return false;
+      console.error('❌ Use post:', error);
       return false;
     }
   },
 
-  // Створити користувача якщо немає
+  /** Створити юзера якщо немає */
   async ensureUserExists(userId: string): Promise<void> {
-    if (balanceCache.has(userId)) {
-      return;
-    }
+    if (cache.has(userId)) return;
 
-    const userRef = db.collection('users').doc(userId);
+    const ref = db.collection('users').doc(userId);
 
     try {
-      const doc = await userRef.get();
+      const doc = await ref.get();
 
       if (doc.exists) {
-        // Юзер є - завантажуємо в кеш
-        const data = doc.data()!;
-        balanceCache.set(userId, {
-          userId,
-          paidMessages: data.paidMessages || 0,
-          totalSpent: data.totalSpent || 0,
-          totalPaidPosts: data.totalPaidPosts || 0,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          lastUpdate: data.lastUpdate?.toDate() || new Date(),
-        });
+        cache.set(userId, toBalance(userId, doc.data()!));
       } else {
-        // Юзера немає - створюємо нового
         const now = new Date();
-        await userRef.set({
+        const newUser: UserBalance = {
           userId,
           paidMessages: 0,
           totalSpent: 0,
           totalPaidPosts: 0,
           createdAt: now,
           lastUpdate: now,
-        });
-        balanceCache.set(userId, {
-          userId,
-          paidMessages: 0,
-          totalSpent: 0,
-          totalPaidPosts: 0,
-          createdAt: now,
-          lastUpdate: now,
-        });
-        console.log(`🆕 User ${userId} створено`);
+        };
+        await ref.set(newUser);
+        cache.set(userId, newUser);
+        console.log(`🆕 User ${userId} created`);
       }
     } catch (error) {
-      console.error('❌ Помилка:', error);
+      console.error('❌ Ensure user:', error);
     }
   },
 };

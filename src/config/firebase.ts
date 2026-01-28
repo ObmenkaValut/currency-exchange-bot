@@ -1,17 +1,23 @@
 import admin from 'firebase-admin';
-import dotenv from 'dotenv';
-import * as path from 'path';
 
-dotenv.config();
+const REQUIRED = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+const missing = REQUIRED.filter((v) => !process.env[v]);
 
-// Використовуємо JSON файл
-const serviceAccount = require(path.join(__dirname, '../../serviceAccountKey.json'));
+if (missing.length > 0) throw new Error(`❌ Missing: ${missing.join(', ')}`);
+
+// Parse private key
+let privateKey = process.env.FIREBASE_PRIVATE_KEY!;
+privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID!,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+      privateKey,
+    }),
   });
+  console.log('✅ Firebase initialized');
 }
 
 export const db = admin.firestore();
-console.log('✅ Firebase ініціалізовано');

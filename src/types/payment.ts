@@ -1,13 +1,4 @@
-export interface PaymentData {
-  userId: string;
-  amount: number;
-  currency: string;
-  service: string;
-  timestamp: Date;
-  status: 'pending' | 'success' | 'failed';
-}
-
-// CryptoBot Webhook типи
+/** CryptoBot Webhook */
 export interface CryptoBotWebhook {
   update_id: number;
   update_type: 'invoice_paid';
@@ -27,7 +18,6 @@ export interface CryptoBotWebhook {
     status: 'paid';
     created_at: string;
     paid_at: string;
-    payload: string; // JSON з userId та count
+    payload: string; // JSON: { userId, count }
   };
 }
-

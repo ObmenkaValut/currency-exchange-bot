@@ -1,20 +1,27 @@
 import { Context, NextFunction } from 'grammy';
 
+const BUTTONS = ['💰 Купити пост', '📊 Статистика', 'ℹ️ Допомога'];
+
+const getType = (ctx: Context): string => {
+  const text = ctx.message?.text;
+  if (text?.startsWith('/')) return `cmd: ${text.split(' ')[0]}`;
+  if (text && BUTTONS.includes(text)) return `btn: ${text}`;
+  if (ctx.message) return 'msg';
+  if (ctx.callbackQuery) return `cb: ${ctx.callbackQuery.data}`;
+  const keys = Object.keys(ctx.update || {}).filter((k) => k !== 'update_id');
+  return keys[0] || 'unknown';
+};
+
 export async function loggerMiddleware(ctx: Context, next: NextFunction) {
   const start = Date.now();
 
-  // Інформація про запит
-  const userId = ctx.from?.id || 'unknown';
-  const username = ctx.from?.username || 'no_username';
-  const chatType = ctx.chat?.type || 'unknown';
-  const messageType = ctx.message ? 'message' : ctx.callbackQuery ? 'callback' : 'other';
+  const user = ctx.from?.username ? `@${ctx.from.username}` : ctx.from?.first_name || 'unknown';
+  const uid = ctx.from?.id || '?';
+  const chat = ctx.chat?.type || 'unknown';
 
-  console.log(`⬇️ [${messageType}] від @${username} (${userId}) в ${chatType}`);
+  console.log(`⬇️ [${getType(ctx)}] ${user} (${uid}) in ${chat}`);
 
-  // Виконуємо наступний handler
   await next();
 
-  // Час виконання
-  const duration = Date.now() - start;
-  console.log(`⬆️ Оброблено за ${duration}ms`);
+  console.log(`⬆️ ${Date.now() - start}ms`);
 }

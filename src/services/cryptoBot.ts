@@ -1,16 +1,11 @@
-import dotenv from 'dotenv';
-import { BOT_URL, getPostWord, calculateAmount } from '../config/constants';
+import { BOT_URL, getPostWord, calculateAmount, MAX_POSTS_PER_PURCHASE } from '../config/constants';
 
-dotenv.config();
+const CRYPTO_API = 'https://pay.crypt.bot/api';
+const TOKEN = process.env.CRYPTO_BOT_TOKEN || '';
 
-if (!process.env.CRYPTO_BOT_TOKEN) {
-    throw new Error('❌ CRYPTO_BOT_TOKEN не знайдено в .env');
-}
+if (!TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не встановлено');
 
-const CRYPTO_BOT_API = 'https://pay.crypt.bot/api';
-const API_TOKEN = process.env.CRYPTO_BOT_TOKEN;
-
-interface CryptoBotInvoiceResponse {
+interface InvoiceResponse {
     ok: boolean;
     result?: {
         invoice_id: number;
@@ -24,82 +19,51 @@ interface CryptoBotInvoiceResponse {
     error?: string;
 }
 
-/**
- * Сервіс для роботи з CryptoBot API
- */
 export const cryptoBotService = {
     async createInvoice(userId: number, count: number): Promise<string | null> {
         try {
+            // Валідація
+            if (!userId || !Number.isInteger(userId) || userId <= 0) {
+                console.error(`🚨 Invalid userId: ${userId}`);
+                return null;
+            }
+            if (!count || !Number.isInteger(count) || count <= 0 || count > MAX_POSTS_PER_PURCHASE) {
+                console.error(`🚨 Invalid count: ${count}`);
+                return null;
+            }
+
             const amount = calculateAmount(count);
-            const postWord = getPostWord(count);
-            const description = `${count} ${postWord} у групу обміну валют`;
-            const payload = JSON.stringify({ userId, count });
+            const word = getPostWord(count);
 
             const params = new URLSearchParams({
                 amount,
                 currency_type: 'fiat',
                 fiat: 'USD',
-                description,
-                payload,
+                description: `${count} ${word} у групу обміну валют`,
+                payload: JSON.stringify({ userId, count }),
                 paid_btn_name: 'openBot',
                 paid_btn_url: BOT_URL,
             });
 
-            const url = `${CRYPTO_BOT_API}/createInvoice?${params.toString()}`;
-
-            const response = await fetch(url, {
+            const res = await fetch(`${CRYPTO_API}/createInvoice?${params}`, {
                 method: 'GET',
-                headers: {
-                    'Crypto-Pay-API-Token': API_TOKEN,
-                },
+                headers: { 'Crypto-Pay-API-Token': TOKEN },
             });
 
-            const data = await response.json() as CryptoBotInvoiceResponse;
+            const data = (await res.json()) as InvoiceResponse;
 
             if (data.ok && data.result) {
-                console.log(`💎 CryptoBot інвойс створено: ${data.result.invoice_id} для ${userId}`);
-                return data.result.bot_invoice_url; // URL для оплати в Telegram
-            } else {
-                console.error('❌ Помилка CryptoBot:', data.error);
-                return null;
-            }
-        } catch (error) {
-            console.error('❌ Помилка createInvoice:', error);
-            return null;
-        }
-    },
-
-    /**
-     * Перевірити статус інвойсу (опціонально, для ручної перевірки)
-     * @param invoiceId - ID інвойсу
-     */
-    async getInvoiceStatus(invoiceId: number): Promise<string | null> {
-        try {
-            const params = new URLSearchParams({
-                invoice_ids: invoiceId.toString(),
-            });
-
-            const url = `${CRYPTO_BOT_API}/getInvoices?${params.toString()}`;
-
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Crypto-Pay-API-Token': API_TOKEN,
-                },
-            });
-
-            const data: any = await response.json();
-
-            if (data.ok && data.result?.items?.[0]) {
-                return data.result.items[0].status;
+                console.log(`💎 Invoice: ${data.result.invoice_id} user=${userId} count=${count}`);
+                return data.result.bot_invoice_url;
             }
 
+            console.error(`❌ CryptoBot: ${data.error}`);
             return null;
         } catch (error) {
-            console.error('❌ Помилка getInvoiceStatus:', error);
+            console.error(`❌ CryptoBot error:`, error);
             return null;
         }
     },
 };
 
-console.log('✅ CryptoBot service ініціалізовано');
+console.log('✅ CryptoBot service ready');

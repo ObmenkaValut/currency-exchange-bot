@@ -15,6 +15,7 @@
   "dependencies": {
     "@google/genai": "^1.38.0",
     "dotenv": "^17.2.3",
+    "emoji-regex": "^10.6.0",
     "express": "^5.2.1",
     "firebase-admin": "^13.6.0",
     "grammy": "^1.39.3"

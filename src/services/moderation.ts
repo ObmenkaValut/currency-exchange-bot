@@ -1,59 +1,59 @@
 import { genAI } from '../config/gemini';
+import { GEMINI_MODEL } from '../config/constants';
 
 interface ModerationResult {
   allowed: boolean;
   reason: string;
 }
 
+const MAX_TEXT_LENGTH = 4000;
+
+const PROMPT_TEMPLATE = `Канал обміну валют/крипти. Пропускай ТІЛЬКИ якщо текст явно про купівлю/продаж/обмін валют (USD, EUR, UAH, BTC, USDT тощо). Блокуй все інше: спам, безглузді символи, нерелевантне.
+
+"{TEXT}"
+
+Поверни JSON. Причина - МАКСИМУМ 3 СЛОВА.
+{"allowed":true/false,"reason":"макс 3 слова"}`;
+
 export const moderationService = {
-  async moderateText( text: string ): Promise<ModerationResult> {
+  async moderateText(text: string): Promise<ModerationResult> {
     try {
-      const prompt = `Ти модеруєш український канал обміну валют та криптовалют.
+      // Валідація
+      if (!text) {
+        return { allowed: false, reason: 'Некоректний текст' };
+      }
+      if (text.length > MAX_TEXT_LENGTH) {
+        return { allowed: false, reason: 'Текст занадто довгий' };
+      }
 
-ДОЗВОЛЕНО (пропускай):
-- Оголошення про обмін USD, EUR, UAH, PLN, крипти (BTC, USDT тощо)
-- Навіть якщо КАПС, багато смайлів 💰💵💸, крикливий текст
-- Курси валют, локації обміну (Київ, Львів тощо)
+      // Запит до AI
+      const escaped = text.replace(/"/g, '\\"');
+      const prompt = PROMPT_TEMPLATE.replace('{TEXT}', escaped);
 
-ОБОВ'ЯЗКОВА ВИМОГА:
-- У тексті ОБОВ'ЯЗКОВО має бути контакт для зв'язку:
-  * @username (Telegram)
-  * Номер телефону (+380...)
-  * Email
-  * Інший месенджер з контактом
-- Якщо контакту НЕМАЄ → allowed: false, reason: "Відсутні контактні дані"
-
-ЗАБОРОНЕНО (блокуй):
-- Порнографія, 18+ контент
-- Наркотики, зброя
-- Казино, азартні ігри, скам
-- Продаж не пов'язаних товарів (гаражі, авто, вейпи, техніка)
-- Спам не про обмін валют
-
-Текст для перевірки:
-"${ text }"
-
-Відповідь ТІЛЬКИ JSON без markdown:
-{"allowed": true/false, "reason": "коротка причина українською"}`;
-
-      const response = await genAI.models.generateContent( {
-        model: 'gemini-2.5-flash-lite',
+      const response = await genAI.models.generateContent({
+        model: GEMINI_MODEL,
         contents: prompt,
-      } );
+      });
 
-      const responseText = response.text || '';
+      // Парсинг відповіді
+      const raw = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
 
-      // Видаляємо markdown блоки якщо є
-      const cleanResponse = responseText.replace( /```json\n?|\n?```/g, '' ).trim();
-      const parsed = JSON.parse( cleanResponse );
+      let parsed: { allowed?: boolean; reason?: string };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        console.error('❌ AI невалідний JSON:', raw);
+        return { allowed: true, reason: 'Помилка парсингу' };
+      }
 
-      return {
-        allowed: parsed.allowed,
-        reason: parsed.reason || '',
-      };
-    } catch ( error ) {
-      console.error( '❌ Помилка модерації:', error );
-      // У разі помилки - дозволяємо (щоб не блокувати всіх)
+      if (typeof parsed.allowed !== 'boolean') {
+        console.error('❌ AI missing allowed:', parsed);
+        return { allowed: true, reason: 'Некоректна відповідь' };
+      }
+
+      return { allowed: parsed.allowed, reason: parsed.reason || '' };
+    } catch (error) {
+      console.error('❌ Модерація:', error);
       return { allowed: true, reason: 'Помилка перевірки' };
     }
   },

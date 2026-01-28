@@ -1,24 +1,21 @@
 import { BotError, Context } from 'grammy';
 
 export async function errorHandler(err: BotError, ctx: Context) {
-  console.error('❌ Помилка в боті:');
-  console.error(err.error);
+  console.error('❌ Bot error:', err.message);
+  console.error('Error:', err.error);
+  if (err.stack) console.error('Stack:', err.stack);
 
   try {
-    // Інформація про контекст помилки
-    const userId = ctx.from?.id;
-    const chatId = ctx.chat?.id;
+    const uid = ctx.from?.id;
+    const chat = ctx.chat?.id;
+    const type = Object.keys(ctx.update || {}).filter((k) => k !== 'update_id')[0] || '?';
+    console.error(`👤 User: ${uid}, Chat: ${chat}, Type: ${type}`);
 
-    console.error(`👤 User: ${userId}, Chat: ${chatId}`);
-
-    // Намагаємось повідомити користувача
     if (ctx.chat) {
-      await ctx.reply(
-        '❌ Виникла помилка. Спробуй ще раз або звернись до @your_support',
-        { reply_to_message_id: ctx.message?.message_id }
-      );
+      const opts = ctx.message?.message_id ? { reply_to_message_id: ctx.message.message_id } : undefined;
+      await ctx.reply('❌ Помилка. Спробуй ще раз', opts);
     }
   } catch (e) {
-    console.error('❌ Не вдалось відправити повідомлення про помилку:', e);
+    console.error('❌ Reply failed:', e);
   }
 }

@@ -1,148 +1,139 @@
-import { Context } from 'grammy';
+import { Context, Bot } from 'grammy';
 import { userBalanceService } from '../services/premium';
 import { cryptoBotService } from '../services/cryptoBot';
-import { userStates } from './commands';
-import { getPostWord, formatPrice } from '../config/constants';
+import { getPostWord, formatPrice, MAX_POSTS_PER_PURCHASE } from '../config/constants';
 
-export function registerPayments(bot: any) {
-  // Callback: Вибір Stars - показуємо пакети для Stars
+// === Пакети ===
+const STARS_PACKAGES = [1, 3, 5, 10, 20, 50, 100];
+const CRYPTO_PACKAGES = [1, 3, 5, 10, 20, 50, 100];
+
+const starsButtons = STARS_PACKAGES.map((n) => [
+  { text: `${n} ${getPostWord(n)} — ${n} ⭐`, callback_data: `stars_${n}` },
+]);
+
+const cryptoButtons = CRYPTO_PACKAGES.map((n) => [
+  { text: `${n} ${getPostWord(n)} — ${formatPrice(n)}`, callback_data: `crypto_${n}` },
+]);
+
+/** Витягує count з callback_data */
+const parseCount = (data: string | undefined, prefix: string): number | null => {
+  const match = data?.match(new RegExp(`^${prefix}_(\\d+)$`));
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return Number.isInteger(n) && n > 0 && n <= MAX_POSTS_PER_PURCHASE ? n : null;
+};
+
+export function registerPayments(bot: Bot) {
+  // === Stars меню ===
   bot.callbackQuery('method_stars', async (ctx: Context) => {
     await ctx.answerCallbackQuery();
-    await ctx.reply(
-      '⭐ Telegram Stars\n\n' +
-      'Обери пакет:',
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '1 пост — 1 ⭐', callback_data: 'stars_1' }],
-            [{ text: '3 пости — 3 ⭐', callback_data: 'stars_3' }],
-            [{ text: '5 постів — 5 ⭐', callback_data: 'stars_5' }],
-            [{ text: '10 постів — 10 ⭐', callback_data: 'stars_10' }],
-            [{ text: '20 постів — 20 ⭐', callback_data: 'stars_20' }],
-            [{ text: '50 постів — 50 ⭐', callback_data: 'stars_50' }],
-            [{ text: '100 постів — 100 ⭐', callback_data: 'stars_100' }],
-          ]
-        }
-      }
-    );
+    await ctx.reply('⭐ Telegram Stars\n\nОбери пакет:', {
+      reply_markup: { inline_keyboard: starsButtons },
+    });
   });
 
-  // Callback: Вибір CryptoBot - показуємо пакети для CryptoBot
+  // === CryptoBot меню ===
   bot.callbackQuery('method_crypto', async (ctx: Context) => {
     await ctx.answerCallbackQuery();
-    await ctx.reply(
-      '💎 CryptoBot (USDT/TON/BTC)\n\n' +
-      'Обери пакет:',
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '1 пост — $0.01', callback_data: 'crypto_1' }],
-            [{ text: '3 пости — $0.03', callback_data: 'crypto_3' }],
-            [{ text: '5 постів — $0.05', callback_data: 'crypto_5' }],
-            [{ text: '10 постів — $0.10', callback_data: 'crypto_10' }],
-            [{ text: '20 постів — $0.20', callback_data: 'crypto_20' }],
-            [{ text: '50 постів — $0.50', callback_data: 'crypto_50' }],
-            [{ text: '100 постів — $1.00', callback_data: 'crypto_100' }],
-          ]
-        }
-      }
-    );
+    await ctx.reply('💎 CryptoBot (USDT/TON/BTC)\n\nОбери пакет:', {
+      reply_markup: { inline_keyboard: cryptoButtons },
+    });
   });
 
-  // Callback: Оплата через Telegram Stars
+  // === Stars оплата ===
   bot.callbackQuery(/^stars_(\d+)$/, async (ctx: Context) => {
-    await ctx.answerCallbackQuery();
-    const userId = ctx.from?.id;
-    if (!userId) return;
-
-    const match = ctx.callbackQuery?.data?.match(/^stars_(\d+)$/);
-    const count = match ? parseInt(match[1], 10) : 1;
-
-    // Встановлюємо стан
-    userStates.set(userId, {
-      step: 'awaiting_payment',
-      packageCount: count
-    });
-
-    // Створюємо Telegram Stars інвойс
     try {
-      const postWord = getPostWord(count);
+      await ctx.answerCallbackQuery();
+      const userId = ctx.from?.id;
+      if (!userId) return;
+
+      const count = parseCount(ctx.callbackQuery?.data, 'stars');
+      if (!count) {
+        await ctx.reply(`❌ Некоректна кількість (1-${MAX_POSTS_PER_PURCHASE})`);
+        return;
+      }
+
+      const word = getPostWord(count);
       await ctx.replyWithInvoice(
-        `Пакет: ${count} ${postWord}`,
-        `Платні пости у групу (з емодзі та модерацією)`,
+        `Пакет: ${count} ${word}`,
+        'Платні пости у групу (з емодзі та модерацією)',
         JSON.stringify({ userId, count }),
         'XTR',
-        [{ label: `${count} ${postWord}`, amount: count }]
+        [{ label: `${count} ${word}`, amount: count }]
       );
     } catch (error) {
-      console.error('❌ Помилка Stars інвойсу:', error);
-      await ctx.reply('❌ Помилка створення інвойсу. Спробуй ще раз');
-      userStates.delete(userId);
+      console.error('❌ Stars:', error);
+      await ctx.reply('❌ Помилка. Спробуй ще раз');
     }
   });
 
-  // Callback: Оплата через CryptoBot
+  // === CryptoBot оплата ===
   bot.callbackQuery(/^crypto_(\d+)$/, async (ctx: Context) => {
-    await ctx.answerCallbackQuery();
-    const userId = ctx.from?.id;
-    if (!userId) return;
+    try {
+      await ctx.answerCallbackQuery();
+      const userId = ctx.from?.id;
+      if (!userId) return;
 
-    const match = ctx.callbackQuery?.data?.match(/^crypto_(\d+)$/);
-    const count = match ? parseInt(match[1], 10) : 1;
+      const count = parseCount(ctx.callbackQuery?.data, 'crypto');
+      if (!count) {
+        await ctx.reply(`❌ Некоректна кількість (1-${MAX_POSTS_PER_PURCHASE})`);
+        return;
+      }
 
-    await ctx.reply('💎 Створюю інвойс CryptoBot...');
+      await ctx.reply('💎 Створюю інвойс...');
+      const payUrl = await cryptoBotService.createInvoice(userId, count);
 
-    // Створюємо CryptoBot інвойс
-    const payUrl = await cryptoBotService.createInvoice(userId, count);
-
-    if (payUrl) {
-      const postWord = getPostWord(count);
-      await ctx.reply(
-        `💎 Інвойс створено!\n\n` +
-        `📦 Пакет: ${count} ${postWord}\n` +
-        `💰 Сума: ${formatPrice(count)}\n\n` +
-        `Натисни кнопку нижче для оплати:`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '💳 Оплатити через CryptoBot', url: payUrl }]
-            ]
-          }
-        }
-      );
-    } else {
-      await ctx.reply('❌ Помилка створення інвойсу. Спробуй ще раз або обери Telegram Stars');
+      if (payUrl) {
+        const word = getPostWord(count);
+        await ctx.reply(
+          `💎 Інвойс створено!\n\n📦 ${count} ${word}\n💰 ${formatPrice(count)}\n\nНатисни для оплати:`,
+          { reply_markup: { inline_keyboard: [[{ text: '💳 Оплатити', url: payUrl }]] } }
+        );
+      } else {
+        await ctx.reply('❌ Помилка. Спробуй Stars');
+      }
+    } catch (error) {
+      console.error('❌ CryptoBot:', error);
+      await ctx.reply('❌ Помилка. Спробуй Stars');
     }
   });
 
-
-
-  // Pre-checkout
-  bot.on('pre_checkout_query', async (ctx: Context) => {
+  // === Pre-checkout ===
+  bot.on('pre_checkout_query', async (ctx) => {
     await ctx.answerPreCheckoutQuery(true);
   });
 
-  // Успішна оплата
+  // === Успішна оплата ===
   bot.on('message:successful_payment', async (ctx: Context) => {
-    const userId = ctx.from?.id;
-    if (!userId) return;
+    try {
+      const userId = ctx.from?.id;
+      if (!userId) return;
 
-    // Отримуємо кількість постів з payload
-    const payload = JSON.parse(ctx.message?.successful_payment?.invoice_payload || '{}');
-    const count = payload.count || 1;
+      // Парсинг payload
+      let payload: { userId?: number; count?: number } = {};
+      try {
+        payload = JSON.parse(ctx.message?.successful_payment?.invoice_payload || '{}');
+      } catch {
+        console.error('❌ Payload parse error');
+        await ctx.reply("❌ Помилка. Зв'яжись з підтримкою");
+        return;
+      }
 
-    console.log(`💰 Оплата від ${userId} - додаємо +${count} платних постів`);
+      const count = payload.count || 1;
+      if (!Number.isInteger(count) || count <= 0 || count > MAX_POSTS_PER_PURCHASE) {
+        console.error(`🚨 Invalid count: ${count} від ${userId}`);
+        await ctx.reply("❌ Помилка валідації. Зв'яжись з підтримкою");
+        return;
+      }
 
-    // Додаємо платні пости до балансу
-    await userBalanceService.addPaidMessages(userId.toString(), count);
+      await userBalanceService.addPaidMessages(userId.toString(), count);
 
-    const postWord = getPostWord(count);
-    await ctx.reply(
-      `✅ Оплата успішна!\n\n` +
-      `Додано ${count} ${postWord} до балансу!\n\n` +
-      `📊 Перевір статистику /start`
-    );
-
-    console.log(`✅ Баланс ${userId}: +${count} постів`);
+      const word = getPostWord(count);
+      await ctx.reply(`✅ Оплата успішна!\n\nДодано ${count} ${word}!\n\n📊 Перевір: /start`);
+      console.log(`✅ Payment: ${userId} +${count}`);
+    } catch (error) {
+      console.error('❌ Payment:', error);
+      await ctx.reply("❌ Помилка. Зв'яжись з підтримкою");
+    }
   });
 }
