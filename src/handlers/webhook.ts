@@ -114,9 +114,15 @@ export function createWebhookRouter(apiToken: string): Router {
                 return res.status(400).json({ ok: false, error: 'Amount mismatch' });
             }
 
-            // 8. Зберігаємо & оновлюємо баланс
+            // 8. Нарахування балансу
             processedInvoices.set(invoiceId, Date.now());
-            await userBalanceService.addPaidMessages(userId.toString(), count);
+            await userBalanceService.addPaidMessages(
+                userId.toString(),
+                count,
+                'cryptobot',
+                undefined, // CryptoBot не передає username
+                invoiceId
+            );
 
             // 9. Повідомляємо юзера
             const word = getPostWord(count);

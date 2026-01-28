@@ -83,9 +83,12 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 9. Списуємо баланс
+    // 9. Списуємо баланс після успішної модерації
     if (isPaid) {
-      await userBalanceService.usePaidMessage(userId.toString());
+      await userBalanceService.usePaidMessage(userId.toString(), {
+        username: ctx.from.username,
+        firstName: ctx.from.first_name,
+      });
       console.log(`✅ Платний від ${userId}`);
     } else {
       limiterService.increment(userId.toString());

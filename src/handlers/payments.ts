@@ -126,7 +126,12 @@ export function registerPayments(bot: Bot) {
         return;
       }
 
-      await userBalanceService.addPaidMessages(userId.toString(), count);
+      await userBalanceService.addPaidMessages(
+        userId.toString(),
+        count,
+        'stars',
+        { username: ctx.from?.username, firstName: ctx.from?.first_name }
+      );
 
       const word = getPostWord(count);
       await ctx.reply(`✅ Оплата успішна!\n\nДодано ${count} ${word}!\n\n📊 Перевір: /start`);

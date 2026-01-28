@@ -2,6 +2,8 @@ import { db } from '../config/firebase';
 
 interface UserBalance {
   userId: string;
+  username?: string;
+  firstName?: string;
   paidMessages: number;
   totalSpent: number;
   totalPaidPosts: number;
@@ -9,11 +11,30 @@ interface UserBalance {
   lastUpdate: Date;
 }
 
+interface Transaction {
+  userId: string;
+  username?: string;
+  firstName?: string;
+  type: 'purchase' | 'use' | 'admin_add' | 'admin_reset';
+  amount: number;
+  source: 'stars' | 'cryptobot' | 'message' | 'admin';
+  invoiceId?: number;
+  createdAt: Date;
+  balanceSnapshot: number;
+}
+
+interface UserInfo {
+  username?: string;
+  firstName?: string;
+}
+
 const cache = new Map<string, UserBalance>();
 
 /** Конвертує Firestore doc в UserBalance */
 const toBalance = (id: string, data: FirebaseFirestore.DocumentData): UserBalance => ({
   userId: id,
+  username: data.username,
+  firstName: data.firstName,
   paidMessages: data.paidMessages || 0,
   totalSpent: data.totalSpent || 0,
   totalPaidPosts: data.totalPaidPosts || 0,
@@ -51,56 +72,128 @@ export const userBalanceService = {
     return 0;
   },
 
-  /** Додати пости (атомарно) */
-  async addPaidMessages(userId: string, count: number): Promise<void> {
+  /** Додати пости (атомарно з логуванням) */
+  async addPaidMessages(
+    userId: string,
+    count: number,
+    source: Transaction['source'] = 'admin',
+    info?: UserInfo,
+    invoiceId?: number
+  ): Promise<void> {
     if (!userId?.trim()) throw new Error('Invalid userId');
     if (!Number.isInteger(count) || count <= 0) throw new Error('Invalid count');
 
-    const ref = db.collection('users').doc(userId);
+    const userRef = db.collection('users').doc(userId);
+    const txRef = db.collection('transactions').doc();
 
-    await db.runTransaction(async (tx) => {
-      const doc = await tx.get(ref);
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
       const data = doc.data() || {};
+      const newBalance = (data.paidMessages || 0) + count;
 
-      tx.set(ref, {
+      // Update User
+      t.set(
+        userRef,
+        {
+          userId,
+          ...(info?.username && { username: info.username }),
+          ...(info?.firstName && { firstName: info.firstName }),
+          paidMessages: newBalance,
+          totalSpent: (data.totalSpent || 0) + count,
+          totalPaidPosts: data.totalPaidPosts || 0,
+          createdAt: data.createdAt || new Date(),
+          lastUpdate: new Date(),
+        },
+        { merge: true }
+      );
+
+      // Log Transaction
+      const txData: Transaction = {
         userId,
-        paidMessages: (data.paidMessages || 0) + count,
-        totalSpent: (data.totalSpent || 0) + count,
-        totalPaidPosts: data.totalPaidPosts || 0,
-        createdAt: data.createdAt || new Date(),
-        lastUpdate: new Date(),
-      });
+        username: info?.username || data.username,
+        firstName: info?.firstName || data.firstName,
+        type: 'purchase',
+        amount: count,
+        source,
+        invoiceId,
+        createdAt: new Date(),
+        balanceSnapshot: newBalance,
+      };
+      t.set(txRef, txData);
     });
 
     // Sync cache
-    const doc = await ref.get();
+    const doc = await userRef.get();
     if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
-    console.log(`💰 User ${userId}: +${count}`);
+    console.log(`💰 User ${userId}: +${count} (Logged)`);
   },
 
-  /** Використати 1 пост (атомарно) */
-  async usePaidMessage(userId: string): Promise<boolean> {
-    const ref = db.collection('users').doc(userId);
+  /** Використати 1 пост (атомарно з логуванням) */
+  async usePaidMessage(userId: string, info?: UserInfo): Promise<boolean> {
+    const userRef = db.collection('users').doc(userId);
+    const txRef = db.collection('transactions').doc();
 
     try {
-      await db.runTransaction(async (tx) => {
-        const doc = await tx.get(ref);
+      await db.runTransaction(async (t) => {
+        const doc = await t.get(userRef);
         if (!doc.exists) throw new Error('User not found');
 
         const data = doc.data()!;
         if ((data.paidMessages || 0) <= 0) throw new Error('No balance');
 
-        tx.update(ref, {
-          paidMessages: data.paidMessages - 1,
+        const newBalance = data.paidMessages - 1;
+
+        // Update User (тільки якщо передали нові дані)
+        if (info?.username || info?.firstName) {
+          t.set(
+            userRef,
+            {
+              ...(info?.username && { username: info.username }),
+              ...(info?.firstName && { firstName: info.firstName }),
+              lastUpdate: new Date(),
+            },
+            { merge: true }
+          );
+        } else {
+          t.update(userRef, {
+            paidMessages: newBalance,
+            totalPaidPosts: (data.totalPaidPosts || 0) + 1,
+            lastUpdate: new Date(),
+          });
+        }
+
+        // Fix: t.update вище вже оновило, але треба ще раз для paidMessages якщо ми в if зайшли? 
+        // Ні, краще одним викликом. Перепишу логіку оновлення.
+
+        const updateData: any = {
+          paidMessages: newBalance,
           totalPaidPosts: (data.totalPaidPosts || 0) + 1,
           lastUpdate: new Date(),
-        });
+        };
+
+        if (info?.username) updateData.username = info.username;
+        if (info?.firstName) updateData.firstName = info.firstName;
+
+        t.set(userRef, updateData, { merge: true });
+
+        // Log Transaction
+        const txData: Transaction = {
+          userId,
+          username: info?.username || data.username,
+          firstName: info?.firstName || data.firstName,
+          type: 'use',
+          amount: 1,
+          source: 'message',
+          createdAt: new Date(),
+          balanceSnapshot: newBalance,
+        };
+        t.set(txRef, txData);
       });
 
       // Sync cache
-      const doc = await ref.get();
+      const doc = await userRef.get();
       if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
-      console.log(`📤 User ${userId}: used 1 post`);
+      console.log(`📤 User ${userId}: used 1 post (Logged)`);
       return true;
     } catch (error) {
       if (error instanceof Error && error.message === 'No balance') return false;
@@ -109,31 +202,42 @@ export const userBalanceService = {
     }
   },
 
-  /** Створити юзера якщо немає */
-  async ensureUserExists(userId: string): Promise<void> {
-    if (cache.has(userId)) return;
-
-    const ref = db.collection('users').doc(userId);
+  /** Створити/Оновити юзера */
+  async ensureUserExists(userId: string, info?: UserInfo): Promise<void> {
+    const userRef = db.collection('users').doc(userId);
 
     try {
-      const doc = await ref.get();
-
-      if (doc.exists) {
-        cache.set(userId, toBalance(userId, doc.data()!));
-      } else {
-        const now = new Date();
-        const newUser: UserBalance = {
-          userId,
-          paidMessages: 0,
-          totalSpent: 0,
-          totalPaidPosts: 0,
-          createdAt: now,
-          lastUpdate: now,
-        };
-        await ref.set(newUser);
-        cache.set(userId, newUser);
-        console.log(`🆕 User ${userId} created`);
+      // Якщо юзер вже є в кеші і дані не змінились - скіпаємо
+      const cached = cache.get(userId);
+      if (cached && cached.username === info?.username && cached.firstName === info?.firstName) {
+        return;
       }
+
+      await db.runTransaction(async (t) => {
+        const doc = await t.get(userRef);
+
+        if (!doc.exists) {
+          const now = new Date();
+          const newUser: UserBalance = {
+            userId,
+            username: info?.username,
+            firstName: info?.firstName,
+            paidMessages: 0,
+            totalSpent: 0,
+            totalPaidPosts: 0,
+            createdAt: now,
+            lastUpdate: now,
+          };
+          t.set(userRef, newUser);
+        } else if (info) {
+          // Оновлюємо актуальні дані (нікнейм міг змінитись)
+          t.set(userRef, { ...info, lastUpdate: new Date() }, { merge: true });
+        }
+      });
+
+      // Sync cache
+      const doc = await userRef.get();
+      if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
     } catch (error) {
       console.error('❌ Ensure user:', error);
     }

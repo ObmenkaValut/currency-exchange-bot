@@ -50,7 +50,10 @@ async function start() {
   bot.use(async (ctx, next) => {
     const userId = ctx.from?.id;
     if (userId && ctx.chat?.type === 'private') {
-      await userBalanceService.ensureUserExists(userId.toString());
+      await userBalanceService.ensureUserExists(userId.toString(), {
+        username: ctx.from.username,
+        firstName: ctx.from.first_name,
+      });
     }
     return next();
   });
