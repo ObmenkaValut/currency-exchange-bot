@@ -1,13 +1,10 @@
 import { Context, Bot } from 'grammy';
 import { limiterService } from '../services/limiter';
 import { userBalanceService } from '../services/premium';
-import { FREE_DAILY_LIMIT } from '../config/constants';
+import { FREE_DAILY_LIMIT, BUTTONS, MAIN_KEYBOARD, MESSAGES } from '../config/constants';
 
 const mainKeyboard = {
-  keyboard: [
-    [{ text: '💰 Купити пост' }, { text: '📊 Статистика' }],
-    [{ text: 'ℹ️ Допомога' }],
-  ],
+  keyboard: MAIN_KEYBOARD.map(row => row.map(text => ({ text }))),
   resize_keyboard: true,
   is_persistent: true,
 };
@@ -37,25 +34,17 @@ export function registerCommands(bot: Bot) {
     }
   });
 
-  // Допомога
-  bot.hears('ℹ️ Допомога', async (ctx: Context) => {
+  // Довідка
+  bot.hears(BUTTONS.HELP, async (ctx: Context) => {
     try {
-      await ctx.reply(
-        'ℹ️ Довідка\n\n' +
-        '🎯 Допомагаю купувати пости для групи обміну валют\n\n' +
-        '💰 Як купити:\n' +
-        '• Натисни «💰 Купити пост»\n' +
-        '• Обери спосіб оплати\n' +
-        '• Обери пакет → Оплати\n\n' +
-        '📊 Баланс зберігається і показується в статистиці'
-      );
+      await ctx.reply(MESSAGES.HELP);
     } catch (error) {
-      console.error('❌ Допомога:', error);
+      console.error('❌ Довідка:', error);
     }
   });
 
-  // Статистика
-  bot.hears('📊 Статистика', async (ctx: Context) => {
+  // Профіль
+  bot.hears(BUTTONS.PROFILE, async (ctx: Context) => {
     try {
       const userId = ctx.from?.id;
       if (!userId) return;
@@ -63,18 +52,27 @@ export function registerCommands(bot: Bot) {
       const free = limiterService.getCount(userId.toString());
       const paid = await userBalanceService.getPaidBalance(userId.toString());
 
-      let msg = `📊 Твоя статистика:\n\n📝 Безкоштовних: ${free}/${FREE_DAILY_LIMIT}\n💎 Платних: ${paid}`;
-      if (paid === 0) msg += '\n\n💡 Купи через «💰 Купити пост»';
+      let msg = `👤 **Мій профіль**\n\n📝 Безкоштовних сьогодні: ${free}/${FREE_DAILY_LIMIT}\n💎 Платних постів: ${paid}`;
+      if (paid === 0) msg += `\n\n💡 Натисни «${BUTTONS.BUY}» щоб купити`;
 
-      await ctx.reply(msg);
+      await ctx.reply(msg, { parse_mode: 'Markdown' });
     } catch (error) {
-      console.error('❌ Статистика:', error);
-      await ctx.reply('❌ Помилка отримання статистики');
+      console.error('❌ Профіль:', error);
+      await ctx.reply('❌ Помилка отримання профілю');
+    }
+  });
+
+  // Адмін
+  bot.hears(BUTTONS.ADMIN, async (ctx: Context) => {
+    try {
+      await ctx.reply(MESSAGES.ADMIN);
+    } catch (error) {
+      console.error('❌ Адмін:', error);
     }
   });
 
   // Купити пост
-  bot.hears('💰 Купити пост', async (ctx: Context) => {
+  bot.hears(BUTTONS.BUY, async (ctx: Context) => {
     try {
       if (!ctx.from?.id) return;
       await ctx.reply('💰 Обери спосіб оплати:', { reply_markup: paymentKeyboard });

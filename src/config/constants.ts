@@ -41,3 +41,35 @@ export const calculateAmount = (n: number): string =>
 
 export const formatPrice = (n: number): string =>
     `$${calculateAmount(n)}`;
+
+// === Keyboard ===
+export const BUTTONS = {
+    BUY: '💰 Купити пост',
+    PROFILE: '👤 Профіль',
+    HELP: 'ℹ️ Довідка',
+    ADMIN: '👨‍💻 Адмін',
+};
+
+// 2x2 Grid Layout
+export const MAIN_KEYBOARD = [
+    [BUTTONS.BUY, BUTTONS.PROFILE],
+    [BUTTONS.HELP, BUTTONS.ADMIN],
+];
+
+// === Messages ===
+export const MESSAGES = {
+    HELP: `
+🤖 **Довідка**
+
+Я допомагаю безпечно обмінюватися валютою.
+• Пиши оголошення в чат
+• Використовуй /start для меню
+• Платні пости довші та помітніші
+    `,
+    ADMIN: `
+👨‍💻 **Адміністратор**
+
+З питань реклами, співпраці або проблем з ботом:
+@admin_placeholder (змінити в налаштуваннях)
+    `,
+};
