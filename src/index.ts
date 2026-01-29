@@ -9,6 +9,7 @@ import { handleGroupMessage } from './handlers/messages';
 import { registerCommands } from './handlers/commands';
 import { registerPayments } from './handlers/payments';
 import { createWebhookRouter } from './handlers/webhook';
+import { registerBroadcast } from './handlers/broadcast';
 import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL } from './config/constants';
@@ -73,6 +74,7 @@ async function start() {
   bot.catch((err) => errorHandler(err, err.ctx));
 
   // === Handlers ===
+  registerBroadcast(bot);
   registerCommands(bot);
   registerPayments(bot);
 

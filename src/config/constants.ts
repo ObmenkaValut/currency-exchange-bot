@@ -5,6 +5,7 @@
 // === Telegram Bot ===
 export const BOT_USERNAME = 'currExchange_robot';
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
+export const ADMIN_IDS: number[] = [300608298]; // ID адмінів для доступу до /broadcast в приваті
 
 // === Pricing ===
 export const PRICE_PER_POST = 0.01; // USD

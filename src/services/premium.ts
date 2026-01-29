@@ -129,9 +129,10 @@ export const userBalanceService = {
   },
 
   /** Використати 1 пост (атомарно з логуванням) */
-  async usePaidMessage(userId: string, info?: UserInfo): Promise<boolean> {
+  async usePaidMessage(userId: string, info?: UserInfo): Promise<{ success: boolean; remaining: number }> {
     const userRef = db.collection('users').doc(userId);
     const txRef = db.collection('transactions').doc();
+    let remaining = -1;
 
     try {
       await db.runTransaction(async (t) => {
@@ -142,28 +143,7 @@ export const userBalanceService = {
         if ((data.paidMessages || 0) <= 0) throw new Error('No balance');
 
         const newBalance = data.paidMessages - 1;
-
-        // Update User (тільки якщо передали нові дані)
-        if (info?.username || info?.firstName) {
-          t.set(
-            userRef,
-            {
-              ...(info?.username && { username: info.username }),
-              ...(info?.firstName && { firstName: info.firstName }),
-              lastUpdate: new Date(),
-            },
-            { merge: true }
-          );
-        } else {
-          t.update(userRef, {
-            paidMessages: newBalance,
-            totalPaidPosts: (data.totalPaidPosts || 0) + 1,
-            lastUpdate: new Date(),
-          });
-        }
-
-        // Fix: t.update вище вже оновило, але треба ще раз для paidMessages якщо ми в if зайшли? 
-        // Ні, краще одним викликом. Перепишу логіку оновлення.
+        remaining = newBalance;
 
         const updateData: any = {
           paidMessages: newBalance,
@@ -194,11 +174,12 @@ export const userBalanceService = {
       const doc = await userRef.get();
       if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
       console.log(`📤 User ${userId}: used 1 post (Logged)`);
-      return true;
+
+      return { success: true, remaining };
     } catch (error) {
-      if (error instanceof Error && error.message === 'No balance') return false;
+      if (error instanceof Error && error.message === 'No balance') return { success: false, remaining: 0 };
       console.error('❌ Use post:', error);
-      return false;
+      return { success: false, remaining: 0 };
     }
   },
 

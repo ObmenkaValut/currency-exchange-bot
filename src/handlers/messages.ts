@@ -87,11 +87,27 @@ export async function handleGroupMessage(ctx: Context) {
 
     // 9. Списуємо баланс після успішної модерації
     if (isPaid) {
-      await userBalanceService.usePaidMessage(userId.toString(), {
+      const result = await userBalanceService.usePaidMessage(userId.toString(), {
         username: ctx.from.username,
         firstName: ctx.from.first_name,
       });
-      console.log(`✅ Платний від ${userId}`);
+
+      console.log(`✅ Платний від ${userId} (Left: ${result.remaining})`);
+
+      // Сповіщення про закінчення балансу (в приват)
+      if (result.success && result.remaining === 0) {
+        try {
+          await ctx.api.sendMessage(
+            userId,
+            '⚠️ **Увага! Твої платні пости закінчились.**\n\n' +
+            'Тепер діють звичайні ліміти (3 фото/день, короткий текст, без емодзі).\n' +
+            'Щоб поповнити, натисни /start або кнопку «💰 Купити пост».'
+          );
+        } catch (e) {
+          // Юзер міг заблокувати бота або не стартувати його
+          console.log(`⚠️ Не вдалось відправити сповіщення юзеру ${userId}`);
+        }
+      }
     } else {
       limiterService.increment(userId.toString());
       const cnt = limiterService.getCount(userId.toString());
