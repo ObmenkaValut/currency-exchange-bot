@@ -35,7 +35,7 @@ export const cryptoBotService = {
             const amount = getPriceCrypto(count).toFixed(2);
             const word = getPostWord(count);
 
-            const params = new URLSearchParams({
+            const body = {
                 amount,
                 currency_type: 'fiat',
                 fiat: 'USD',
@@ -43,11 +43,15 @@ export const cryptoBotService = {
                 payload: JSON.stringify({ userId, count }),
                 paid_btn_name: 'openBot',
                 paid_btn_url: BOT_URL,
-            });
+            };
 
-            const res = await fetch(`${CRYPTO_API}/createInvoice?${params}`, {
-                method: 'GET',
-                headers: { 'Crypto-Pay-API-Token': TOKEN },
+            const res = await fetch(`${CRYPTO_API}/createInvoice`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Crypto-Pay-API-Token': TOKEN
+                },
+                body: JSON.stringify(body),
             });
 
             const data = (await res.json()) as InvoiceResponse;

@@ -1,10 +1,8 @@
 import { UserLimit } from '../types/user';
-import { getTodayDate } from '../utils/helpers';
+import { getTodayDate, enforceMapLimit } from '../utils/helpers';
 import {
-  AI_RATE_LIMIT,
   AI_RATE_WINDOW,
   CLEANUP_INTERVAL,
-  FREE_DAILY_LIMIT,
   MAX_CACHE_SIZE,
 } from '../config/constants';
 
@@ -15,14 +13,6 @@ const aiRateLimits = new Map<string, { count: number; resetAt: number }>();
 const spamLog = new Map<string, number[]>(); // userId -> [timestamp1, timestamp2...]
 const bannedUsers = new Map<string, number>(); // userId -> banExpiresAt
 
-/** Удаляет самые старые записи если превышен лимит */
-const enforceLimit = <T>(map: Map<string, T>, max: number): void => {
-  if (map.size <= max) return;
-  const toDelete = Array.from(map.keys()).slice(0, map.size - max);
-  toDelete.forEach((k) => map.delete(k));
-  console.log(`🧹 Cache overflow: удалено ${toDelete.length} записей`);
-};
-
 // === Cleanup каждый час ===
 setInterval(() => {
   const today = getTodayDate();
@@ -31,8 +21,8 @@ setInterval(() => {
   dailyLimits.forEach((v, k) => v.date !== today && dailyLimits.delete(k));
   aiRateLimits.forEach((v, k) => v.resetAt < now && aiRateLimits.delete(k));
 
-  enforceLimit(dailyLimits, MAX_CACHE_SIZE);
-  enforceLimit(aiRateLimits, MAX_CACHE_SIZE);
+  enforceMapLimit(dailyLimits, MAX_CACHE_SIZE);
+  enforceMapLimit(aiRateLimits, MAX_CACHE_SIZE);
   // Optional: spamLog cleans itself on access, bannedUsers cleans on access.
   // But we can limit size to avoid memory leak if many users spam
   if (spamLog.size > MAX_CACHE_SIZE) spamLog.clear();

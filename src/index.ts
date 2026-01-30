@@ -131,7 +131,12 @@ async function start() {
 
   // === Express ===
   const app = express();
-  app.use(express.json());
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  app.use(express.json({
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
   app.use('/webhook', createWebhookRouter(CRYPTO_TOKEN));
   app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

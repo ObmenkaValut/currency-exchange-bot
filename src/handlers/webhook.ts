@@ -15,17 +15,12 @@ import {
     MAX_CACHE_SIZE,
     MESSAGES,
 } from '../config/constants';
+import { enforceMapLimit } from '../utils/helpers';
 
 // === Cache для дедупликации ===
 const processedInvoices = new Map<number, number>();
 
-/** Удаляет самые старые записи если превышен лимит */
-const enforceLimit = <K, V>(map: Map<K, V>, max: number): void => {
-    if (map.size <= max) return;
-    const toDelete = Array.from(map.keys()).slice(0, map.size - max);
-    toDelete.forEach((k) => map.delete(k));
-    console.log(`🧹 Invoice cache: удалено ${toDelete.length} записей`);
-};
+
 
 // === Cleanup каждый час ===
 setInterval(() => {
@@ -33,7 +28,7 @@ setInterval(() => {
     processedInvoices.forEach((ts, id) => {
         if (now - ts > INVOICE_TTL) processedInvoices.delete(id);
     });
-    enforceLimit(processedInvoices, MAX_CACHE_SIZE);
+    enforceMapLimit(processedInvoices, MAX_CACHE_SIZE);
     console.log(`🧹 Invoice cleanup: ${processedInvoices.size} cached`);
 }, CLEANUP_INTERVAL);
 
@@ -59,7 +54,9 @@ export function createWebhookRouter(apiToken: string): Router {
                 return res.status(401).json({ ok: false, error: 'Missing signature' });
             }
 
-            const bodyStr = JSON.stringify(req.body);
+            // @ts-ignore - rawBody is added by express middleware
+            const bodyStr = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
+
             if (!verifySignature(bodyStr, signature, apiToken)) {
                 console.error('❌ Invalid signature');
                 return res.status(401).json({ ok: false, error: 'Invalid signature' });

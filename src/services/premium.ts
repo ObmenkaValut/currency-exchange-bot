@@ -208,46 +208,7 @@ export const userBalanceService = {
     }
   },
 
-  /** Создать/Обновить юзера */
-  async ensureUserExists(userId: string, info?: UserInfo): Promise<void> {
-    const userRef = db.collection('users').doc(userId);
 
-    try {
-      // Если юзер уже есть в кэше и данные не изменились - скипаем
-      const cached = cache.get(userId);
-      if (cached && cached.username === info?.username && cached.firstName === info?.firstName) {
-        return;
-      }
-
-      await db.runTransaction(async (t) => {
-        const doc = await t.get(userRef);
-
-        if (!doc.exists) {
-          const now = new Date();
-          const newUser: UserBalance = {
-            userId,
-            username: info?.username,
-            firstName: info?.firstName,
-            paidMessages: 0,
-            totalSpent: 0,
-            totalPaidPosts: 0,
-            createdAt: now,
-            lastUpdate: now,
-          };
-          t.set(userRef, newUser);
-        } else if (info) {
-          // Обновляем актуальные данные (никнейм мог измениться)
-          t.set(userRef, { ...info, lastUpdate: new Date() }, { merge: true });
-        }
-      });
-
-      // Sync cache
-      const doc = await userRef.get();
-      if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
-    } catch (error) {
-      console.error('❌ Ensure user:', error);
-    }
-  },
 
   /** Удалить старые транзакции (старше N дней) */
   async deleteOldTransactions(days: number): Promise<void> {

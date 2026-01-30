@@ -40,7 +40,7 @@ export const TRANSACTION_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // Провер
 export const MAX_CACHE_SIZE = 10000;
 
 // === Scheduled Message ===
-export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 1 / 60; // Периодичность в часах
+export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 3; // Периодичность в часах
 export const TARGET_CHAT_ID = process.env.GROUP_ID; // ID чата, куда отправлять (ЗАМЕНИТЬ НА НУЖНЫЙ)
 export const SCHEDULED_MESSAGE_TEXT = '⚠️ *ВНИМАНИЕ. АДМИНИСТРАЦИЯ ЧАТА НЕ НЕСЕТ ОТВЕТСТВЕННОСТИ ЗА УЧАСТНИКОВ СДЕЛКИ.*';
 
@@ -166,7 +166,7 @@ export const MESSAGES = {
     BTN_PAY: '💳 Оплатить',
     BTN_BACK: '« Назад',
     SUCCESS: (count: number, word: string) =>
-      `✅ Оплата успешна! \n\nНажми кнопку "Профиль", чтобы проверить баланс ↓`,
+      `Ты успешно оплатил(а) ${count} ${word} ✅ \n\nНажми кнопку "Профиль", чтобы проверить баланс ↓`,
     FALLBACK_TRY_STARS: '❌ Ошибка. Попробуй Stars',
   },
 
