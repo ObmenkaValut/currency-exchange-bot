@@ -1,5 +1,5 @@
 import { genAI } from '../config/gemini';
-import { GEMINI_MODEL } from '../config/constants';
+import { GEMINI_MODEL, AI_PROMPT_TEMPLATE } from '../config/constants';
 
 interface ModerationResult {
   allowed: boolean;
@@ -8,53 +8,66 @@ interface ModerationResult {
 
 const MAX_TEXT_LENGTH = 4000;
 
-const PROMPT_TEMPLATE = `Канал обміну валют/крипти. Пропускай ТІЛЬКИ якщо текст явно про купівлю/продаж/обмін валют (USD, EUR, UAH, BTC, USDT тощо). Блокуй все інше: спам, безглузді символи, нерелевантне.
-
-"{TEXT}"
-
-Поверни JSON. Причина - МАКСИМУМ 3 СЛОВА.
-{"allowed":true/false,"reason":"макс 3 слова"}`;
-
 export const moderationService = {
   async moderateText(text: string): Promise<ModerationResult> {
-    try {
-      // Валідація
-      if (!text) {
-        return { allowed: false, reason: 'Некоректний текст' };
-      }
-      if (text.length > MAX_TEXT_LENGTH) {
-        return { allowed: false, reason: 'Текст занадто довгий' };
-      }
+    // Валидация (без AI)
+    if (!text) return { allowed: false, reason: 'Некорректный текст' };
+    if (text.length > MAX_TEXT_LENGTH) return { allowed: false, reason: 'Текст слишком длинный' };
 
-      // Запит до AI
-      const escaped = text.replace(/"/g, '\\"');
-      const prompt = PROMPT_TEMPLATE.replace('{TEXT}', escaped);
+    const maxRetries = 3;
+    let attempt = 0;
 
-      const response = await genAI.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: prompt,
-      });
-
-      // Парсинг відповіді
-      const raw = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
-
-      let parsed: { allowed?: boolean; reason?: string };
+    while (attempt < maxRetries) {
       try {
-        parsed = JSON.parse(raw);
-      } catch {
-        console.error('❌ AI невалідний JSON:', raw);
-        return { allowed: true, reason: 'Помилка парсингу' };
-      }
+        attempt++;
 
-      if (typeof parsed.allowed !== 'boolean') {
-        console.error('❌ AI missing allowed:', parsed);
-        return { allowed: true, reason: 'Некоректна відповідь' };
-      }
+        // Запрос к AI
+        const escaped = text.replace(/"/g, '\\"');
+        const prompt = AI_PROMPT_TEMPLATE.replace('{TEXT}', escaped);
 
-      return { allowed: parsed.allowed, reason: parsed.reason || '' };
-    } catch (error) {
-      console.error('❌ Модерація:', error);
-      return { allowed: true, reason: 'Помилка перевірки' };
+        const response = await genAI.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: prompt,
+        });
+
+        // Парсинг ответа
+        const raw = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
+
+        let parsed: { allowed?: boolean; reason?: string };
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          console.error(`❌ AI JSON parse error (try ${attempt}):`, raw);
+          // Если json битый, вряд ли повтор поможет, но можно попробовать или выйти.
+          // Обычно это не 503, так что fail open
+          return { allowed: true, reason: 'Ошибка парсинга' };
+        }
+
+        if (typeof parsed.allowed !== 'boolean') {
+          return { allowed: true, reason: 'Некорректный ответ' };
+        }
+
+        return { allowed: parsed.allowed, reason: parsed.reason || '' };
+
+      } catch (error: any) {
+        // Проверяем на перегрузку (503)
+        const isOverloaded =
+          error?.status === 503 ||
+          error?.error?.code === 503 ||
+          (error?.message && error.message.includes('overloaded'));
+
+        if (isOverloaded && attempt < maxRetries) {
+          console.warn(`⚠️ AI Overloaded. Retrying (${attempt}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s, 2s...
+          continue;
+        }
+
+        console.error(`❌ Модерация (fail):`, error?.message || error);
+        // Fail open: разрешаем сообщение, чтобы не блокировать чат при сбое AI
+        return { allowed: true, reason: 'Ошибка проверки' };
+      }
     }
+
+    return { allowed: true, reason: 'Ошибка проверки' };
   },
 };

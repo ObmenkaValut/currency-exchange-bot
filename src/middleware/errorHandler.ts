@@ -13,7 +13,7 @@ export async function errorHandler(err: BotError, ctx: Context) {
 
     if (ctx.chat) {
       const opts = ctx.message?.message_id ? { reply_to_message_id: ctx.message.message_id } : undefined;
-      await ctx.reply('❌ Помилка. Спробуй ще раз', opts);
+      await ctx.reply('❌ Ошибка. Попробуй снова', opts);
     }
   } catch (e) {
     console.error('❌ Reply failed:', e);

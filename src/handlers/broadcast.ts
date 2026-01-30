@@ -7,21 +7,21 @@ type AdminState =
     | { step: 'WAITING_FOR_CONTENT'; type: 'test' | 'all' }
     | { step: 'WAITING_FOR_CONFIRM'; type: 'test' | 'all'; messageId: number; chatId: number };
 
-// Зберігаємо стан в пам'яті (adminId -> state)
+// Сохраняем состояние в памяти (adminId -> state)
 const adminStates = new Map<number, AdminState>();
 
 // === Helpers ===
 
-import { ADMIN_IDS } from '../config/constants';
+import { ADMIN_IDS, MESSAGES } from '../config/constants';
 
 // ...
 
 const isAdmin = async (ctx: Context): Promise<boolean> => {
     if (!ctx.from) return false;
-    // 1. Перевірка по hardcoded ID (працює завжди, навіть в приват)
+    // 1. Проверка по hardcoded ID (работает всегда, даже в привате)
     if (ADMIN_IDS.includes(ctx.from.id)) return true;
 
-    // 2. Перевірка по статусу в групі (тільки якщо повідомлення з групи)
+    // 2. Проверка по статусу в группе (только если сообщение из группы)
     if (ctx.chat && ctx.chat.type !== 'private') {
         try {
             const member = await ctx.api.getChatMember(ctx.chat.id, ctx.from.id);
@@ -39,11 +39,11 @@ const resetState = (userId: number) => adminStates.set(userId, { step: 'IDLE' })
 // === Broadcast Logic ===
 
 /**
- * Розсилає повідомлення користувачам з бази.
- * @param ctx Контекст для копіювання повідомлення
- * @param sourceChatId Де знаходиться оригінал повідомлення
- * @param sourceMsgId ID оригіналу повідомлення
- * @param testMode Якщо true, шле тільки автору
+ * Рассылает сообщение пользователям из базы.
+ * @param ctx Контекст для копирования сообщения
+ * @param sourceChatId Где находится оригинал сообщения
+ * @param sourceMsgId ID оригинала сообщения
+ * @param testMode Если true, шлет только автору
  */
 async function performBroadcast(
     ctx: Context,
@@ -56,32 +56,32 @@ async function performBroadcast(
     if (testMode) {
         try {
             await ctx.api.copyMessage(adminId, sourceChatId, sourceMsgId, { disable_notification: true });
-            await ctx.reply('✅ Тест успішний! Повідомлення надіслано в твій приват (без звуку).');
+            await ctx.reply(MESSAGES.BROADCAST.TEST_SUCCESS);
         } catch (error) {
-            await ctx.reply(`❌ Помилка тесту: ${error}`);
+            await ctx.reply(MESSAGES.BROADCAST.TEST_FAIL(error));
         }
         return;
     }
 
     // ALL Post Mode
-    await ctx.reply('🚀 Починаю розсилку... Це може зайняти час.');
+    await ctx.reply(MESSAGES.BROADCAST.STARTING);
 
     let success = 0;
     let fail = 0;
     let total = 0;
 
     try {
-        // Отримуємо загальну кількість юзерів (ефективно, без скачування документів)
+        // Получаем общее количество юзеров (эффективно, без скачивания документов)
         const countSnapshot = await db.collection('users').count().get();
         total = countSnapshot.data().count;
 
-        // Використовуємо stream для економії пам'яті (читає по одному, а не всі разом)
+        // Используем stream для экономии памяти (читает по одному, а не все сразу)
         const stream = db.collection('users').stream();
 
         for await (const doc of stream) {
             const userId = (doc as any).id; // stream returns internal objects that have .id
             try {
-                // copyMessage повертає MessageId, який нам тут не треба, але ми чекаємо завершення
+                // copyMessage возвращает MessageId, который нам тут не нужен, но мы ждем завершения
                 await ctx.api.copyMessage(userId, sourceChatId, sourceMsgId);
                 success++;
             } catch (e) {
@@ -89,15 +89,15 @@ async function performBroadcast(
                 // console.warn(`Failed to send to ${userId}:`, e);
             }
 
-            // Rate limit: 50ms (~20 msgs/sec) - безпечно для лімітів Telegram (30/sec)
+            // Rate limit: 50ms (~20 msgs/sec) - безопасно для лимитов Telegram (30/sec)
             await new Promise(r => setTimeout(r, 50));
         }
 
-        await ctx.reply(`✅ Розсилка завершена!\n\nОхоплення: ${total}\nУспішно: ${success}\nПомилок: ${fail} (блокували бота або видалились)`);
+        await ctx.reply(MESSAGES.BROADCAST.SUMMARY(total, success, fail));
 
     } catch (error) {
         console.error('Broadcast error:', error);
-        await ctx.reply('❌ Критична помилка під час розсилки.');
+        await ctx.reply(MESSAGES.BROADCAST.ERROR_CRITICAL);
     }
 }
 
@@ -105,34 +105,39 @@ async function performBroadcast(
 
 export function registerBroadcast(bot: Bot) {
 
-    // Команди старту
-    bot.command(['testPost', 'allPost'], async (ctx) => {
+    // Команды старта
+    bot.command(['testpost', 'allpost'], async (ctx) => {
         if (!ctx.from) return;
-        if (!(await isAdmin(ctx))) return; // Silent ignore for non-admins
+        // Работаем только в ЛС
+        if (ctx.chat?.type !== 'private') return;
+
+        if (!(await isAdmin(ctx))) {
+            await ctx.reply(MESSAGES.ERRORS.NOT_ADMIN);
+            return;
+        }
 
         const type = ctx.message?.text?.includes('testPost') ? 'test' : 'all';
-        const label = type === 'test' ? 'ТЕСТОВИЙ (тільки адміну)' : 'МАСОВИЙ (всім юзерам)';
+        const label = type === 'test' ? 'ТЕСТ (только себе)' : 'МАССОВАЯ (всем юзерам)';
 
         adminStates.set(ctx.from.id, { step: 'WAITING_FOR_CONTENT', type });
 
         await ctx.reply(
-            `📝 Ти почав створення розсилки: **${label}**\n\n` +
-            `Надішли сюди повідомлення (текст, фото, відео), яке хочеш відправити.\n` +
-            `Або напиши /cancel для скасування.`,
+            MESSAGES.BROADCAST.START_PREFIX(label) +
+            MESSAGES.BROADCAST.START_SUFFIX,
             { parse_mode: 'Markdown' }
         );
     });
 
-    // Скасування
+    // Отмена
     bot.command('cancel', async (ctx) => {
         if (!ctx.from) return;
         if (adminStates.get(ctx.from.id)?.step !== 'IDLE') {
             resetState(ctx.from.id);
-            await ctx.reply('❌ Операція скасована.');
+            await ctx.reply(MESSAGES.BROADCAST.CANCELLED);
         }
     });
 
-    // Обробка контенту і підтвердження (Message Interceptor)
+    // Обработка контента и подтверждение (Message Interceptor)
     bot.on('message', async (ctx, next) => {
         const userId = ctx.from?.id;
         if (!userId) return next();
@@ -140,9 +145,9 @@ export function registerBroadcast(bot: Bot) {
         const state = adminStates.get(userId);
         if (!state || state.step === 'IDLE') return next();
 
-        // 1. Отримання контенту
+        // 1. Получение контента
         if (state.step === 'WAITING_FOR_CONTENT') {
-            // Ігноруємо команди, якщо вони випадково потрапили (крім cancel, який обробиться своїм хендлером)
+            // Игнорируем команды, если они случайно попали (кроме cancel, который обработается своим хендлером)
             if (ctx.message.text?.startsWith('/')) return next();
 
             adminStates.set(userId, {
@@ -152,38 +157,38 @@ export function registerBroadcast(bot: Bot) {
                 chatId: ctx.chat!.id
             });
 
-            const target = state.type === 'test' ? 'Тільки ТОБІ (тихо)' : 'ВСІМ користувачам (зі звуком)';
+            const target = state.type === 'test' ? MESSAGES.BROADCAST.TARGET_TEST : MESSAGES.BROADCAST.TARGET_ALL;
 
             await ctx.api.copyMessage(ctx.chat!.id, ctx.chat!.id, ctx.message.message_id);
             await ctx.reply(
-                `👆 Ось як це буде виглядати.\n\n` +
-                `🎯 Куди: **${target}**\n` +
-                `Відправляти? (напиши **так** або **ні**)`
+                MESSAGES.BROADCAST.PREVIEW_HEADER +
+                MESSAGES.BROADCAST.TARGET(target) +
+                MESSAGES.BROADCAST.CONFIRM_PROMPT
             );
             return; // Stop propagation
         }
 
-        // 2. Підтвердження
+        // 2. Подтверждение
         if (state.step === 'WAITING_FOR_CONFIRM') {
             const text = ctx.message.text?.toLowerCase().trim();
 
-            if (text === 'так' || text === '+') {
+            if (text && MESSAGES.BROADCAST.BTN_YES.includes(text)) {
                 const { type, chatId, messageId } = state;
                 resetState(userId); // Reset before executing to avoid double click issues
 
                 if (type === 'test') {
                     await performBroadcast(ctx, chatId, messageId, true);
                 } else {
-                    // Запускаємо у фоні для масової розсилки, щоб не блокити відповідь
+                    // Запускаем в фоне для массовой рассылки, чтобы не блочить ответ
                     performBroadcast(ctx, chatId, messageId, false).catch(e => {
                         console.error('Background broadcast error:', e);
                     });
                 }
-            } else if (text === 'ні' || text === '-') {
+            } else if (text && MESSAGES.BROADCAST.BTN_NO.includes(text)) {
                 resetState(userId);
-                await ctx.reply('❌ Скасовано. Можеш почати заново через команду.');
+                await ctx.reply(MESSAGES.BROADCAST.CANCELLED);
             } else {
-                await ctx.reply('Напиши "так" або "ні" (або /cancel).');
+                await ctx.reply(MESSAGES.BROADCAST.INVALID_INPUT);
             }
             return; // Stop propagation
         }

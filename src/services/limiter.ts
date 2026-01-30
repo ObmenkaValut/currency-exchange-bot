@@ -8,19 +8,22 @@ import {
   MAX_CACHE_SIZE,
 } from '../config/constants';
 
-// === In-memory кеші ===
+// === In-memory кэши ===
 const dailyLimits = new Map<string, UserLimit>();
 const aiRateLimits = new Map<string, { count: number; resetAt: number }>();
+// Spam Protection
+const spamLog = new Map<string, number[]>(); // userId -> [timestamp1, timestamp2...]
+const bannedUsers = new Map<string, number>(); // userId -> banExpiresAt
 
-/** Видаляє найстаріші записи якщо перевищено ліміт */
+/** Удаляет самые старые записи если превышен лимит */
 const enforceLimit = <T>(map: Map<string, T>, max: number): void => {
   if (map.size <= max) return;
   const toDelete = Array.from(map.keys()).slice(0, map.size - max);
   toDelete.forEach((k) => map.delete(k));
-  console.log(`🧹 Cache overflow: видалено ${toDelete.length} записів`);
+  console.log(`🧹 Cache overflow: удалено ${toDelete.length} записей`);
 };
 
-// === Cleanup кожну годину ===
+// === Cleanup каждый час ===
 setInterval(() => {
   const today = getTodayDate();
   const now = Date.now();
@@ -30,18 +33,16 @@ setInterval(() => {
 
   enforceLimit(dailyLimits, MAX_CACHE_SIZE);
   enforceLimit(aiRateLimits, MAX_CACHE_SIZE);
+  // Optional: spamLog cleans itself on access, bannedUsers cleans on access.
+  // But we can limit size to avoid memory leak if many users spam
+  if (spamLog.size > MAX_CACHE_SIZE) spamLog.clear();
+  if (bannedUsers.size > MAX_CACHE_SIZE) bannedUsers.clear();
 
   console.log(`🧹 Cleanup: daily=${dailyLimits.size}, ai=${aiRateLimits.size}`);
 }, CLEANUP_INTERVAL);
 
 // === Service ===
 export const limiterService = {
-  checkLimit(userId: string): boolean {
-    const today = getTodayDate();
-    const limit = dailyLimits.get(userId);
-    return !limit || limit.date !== today || limit.count < FREE_DAILY_LIMIT;
-  },
-
   getCount(userId: string): number {
     const today = getTodayDate();
     const limit = dailyLimits.get(userId);
@@ -72,8 +73,39 @@ export const limiterService = {
       return true;
     }
 
-    if (limit.count >= AI_RATE_LIMIT) return false;
     limit.count++;
     return true;
+  },
+
+  checkSpam(userId: string): { isBanned: boolean; banExpiresAt?: number } {
+    const now = Date.now();
+
+    // 1. Check if already banned
+    const banExpires = bannedUsers.get(userId);
+    if (banExpires) {
+      if (banExpires > now) {
+        return { isBanned: true, banExpiresAt: banExpires };
+      } else {
+        bannedUsers.delete(userId); // Ban expired
+      }
+    }
+
+    // 2. Update spam logs
+    let logs = spamLog.get(userId) || [];
+    // Clean old logs (> 10 sec)
+    logs = logs.filter(time => now - time < 10000);
+    logs.push(now);
+
+    // 3. Check for spam: > 10 messages in 10 seconds
+    if (logs.length > 10) {
+      // Ban for 3 minutes
+      const banTime = now + 3 * 60 * 1000;
+      bannedUsers.set(userId, banTime);
+      spamLog.delete(userId); // Reset logs
+      return { isBanned: true, banExpiresAt: banTime };
+    }
+
+    spamLog.set(userId, logs);
+    return { isBanned: false };
   },
 };

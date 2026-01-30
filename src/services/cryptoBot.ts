@@ -1,9 +1,9 @@
-import { BOT_URL, getPostWord, calculateAmount, MAX_POSTS_PER_PURCHASE } from '../config/constants';
+import { BOT_URL, getPostWord, getPriceCrypto, MAX_POSTS_PER_PURCHASE } from '../config/constants';
 
 const CRYPTO_API = 'https://pay.crypt.bot/api';
 const TOKEN = process.env.CRYPTO_BOT_TOKEN || '';
 
-if (!TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не встановлено');
+if (!TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не установлен');
 
 interface InvoiceResponse {
     ok: boolean;
@@ -22,7 +22,7 @@ interface InvoiceResponse {
 export const cryptoBotService = {
     async createInvoice(userId: number, count: number): Promise<string | null> {
         try {
-            // Валідація
+            // Валидация
             if (!userId || !Number.isInteger(userId) || userId <= 0) {
                 console.error(`🚨 Invalid userId: ${userId}`);
                 return null;
@@ -32,14 +32,14 @@ export const cryptoBotService = {
                 return null;
             }
 
-            const amount = calculateAmount(count);
+            const amount = getPriceCrypto(count).toFixed(2);
             const word = getPostWord(count);
 
             const params = new URLSearchParams({
                 amount,
                 currency_type: 'fiat',
                 fiat: 'USD',
-                description: `${count} ${word} у групу обміну валют`,
+                description: `${count} ${word} в группу обмена валют`,
                 payload: JSON.stringify({ userId, count }),
                 paid_btn_name: 'openBot',
                 paid_btn_url: BOT_URL,

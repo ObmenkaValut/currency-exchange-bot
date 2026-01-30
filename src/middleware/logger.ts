@@ -1,11 +1,12 @@
 import { Context, NextFunction } from 'grammy';
+import { BUTTONS } from '../config/constants';
 
-const BUTTONS = ['💰 Купити пост', '📊 Статистика', 'ℹ️ Допомога'];
+const BUTTON_VALUES = Object.values(BUTTONS);
 
 const getType = (ctx: Context): string => {
   const text = ctx.message?.text;
   if (text?.startsWith('/')) return `cmd: ${text.split(' ')[0]}`;
-  if (text && BUTTONS.includes(text)) return `btn: ${text}`;
+  if (text && BUTTON_VALUES.includes(text)) return `btn: ${text}`;
   if (ctx.message) return 'msg';
   if (ctx.callbackQuery) return `cb: ${ctx.callbackQuery.data}`;
   const keys = Object.keys(ctx.update || {}).filter((k) => k !== 'update_id');

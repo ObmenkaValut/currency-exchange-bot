@@ -1,7 +1,7 @@
 import { Context, Bot } from 'grammy';
 import { limiterService } from '../services/limiter';
 import { userBalanceService } from '../services/premium';
-import { FREE_DAILY_LIMIT, BUTTONS, MAIN_KEYBOARD, MESSAGES } from '../config/constants';
+import { FREE_DAILY_LIMIT, BUTTONS, MAIN_KEYBOARD, MESSAGES, PAYMENT_KEYBOARD, ADMIN_IDS } from '../config/constants';
 
 const mainKeyboard = {
   keyboard: MAIN_KEYBOARD.map(row => row.map(text => ({ text }))),
@@ -9,80 +9,90 @@ const mainKeyboard = {
   is_persistent: true,
 };
 
-const paymentKeyboard = {
-  inline_keyboard: [
-    [{ text: '⭐ Telegram Stars', callback_data: 'method_stars' }],
-    [{ text: '💎 CryptoBot (USDT/TON/BTC)', callback_data: 'method_crypto' }],
-  ],
-};
+// Main keyboard defined elsewhere or above
 
 export function registerCommands(bot: Bot) {
   // /start
   bot.command('start', async (ctx: Context) => {
+    // Игнорируем в группах
+    if (ctx.chat?.type !== 'private') return;
+
     try {
-      await ctx.reply(
-        '👋 Привіт!\n\n' +
-        'Я бот для покупки постів у групі обміну валют.\n\n' +
-        '💰 Купуй пости через кнопку нижче\n' +
-        '📊 Переглядай свій баланс\n\n' +
-        '👇 Використовуй кнопки:',
-        { reply_markup: mainKeyboard }
-      );
+      await ctx.reply(MESSAGES.START, { reply_markup: mainKeyboard });
     } catch (error) {
       console.error('❌ /start:', error);
-      await ctx.reply('❌ Помилка. Спробуй знову.');
+      await ctx.reply(MESSAGES.ERRORS.GENERIC);
     }
   });
 
-  // Довідка
+  // Справка
   bot.hears(BUTTONS.HELP, async (ctx: Context) => {
     try {
       await ctx.reply(MESSAGES.HELP);
     } catch (error) {
-      console.error('❌ Довідка:', error);
+      console.error('❌ Справка:', error);
     }
   });
 
-  // Профіль
+  // Профиль
   bot.hears(BUTTONS.PROFILE, async (ctx: Context) => {
     try {
       const userId = ctx.from?.id;
       if (!userId) return;
 
       const free = limiterService.getCount(userId.toString());
-      const paid = await userBalanceService.getPaidBalance(userId.toString());
+      const profile = await userBalanceService.getUserProfile(userId.toString());
 
-      let msg = `👤 **Мій профіль**\n\n📝 Безкоштовних сьогодні: ${free}/${FREE_DAILY_LIMIT}\n💎 Платних постів: ${paid}`;
-      if (paid === 0) msg += `\n\n💡 Натисни «${BUTTONS.BUY}» щоб купити`;
+      // Format: 14:20 | 29.01
+      let dateStr = '—';
+      if (profile.lastPostDate) {
+        const d = profile.lastPostDate;
+        const hh = d.getHours().toString().padStart(2, '0');
+        const mm = d.getMinutes().toString().padStart(2, '0');
+        const dd = d.getDate().toString().padStart(2, '0');
+        const mo = (d.getMonth() + 1).toString().padStart(2, '0');
+        dateStr = `${hh}:${mm} | ${dd}.${mo}`;
+      }
+
+      let msg = `${MESSAGES.PROFILE.SECTION_AVAILABLE}\n` +
+        `${MESSAGES.PROFILE.FREE_K(free, FREE_DAILY_LIMIT)}\n` +
+        `${MESSAGES.PROFILE.PAID_K(profile.paidMessages)}\n` +
+        `${MESSAGES.PROFILE.SECTION_ACTIVITY}\n` +
+        `${MESSAGES.PROFILE.TOTAL_K(profile.totalPaidPosts)}\n` +
+        `${MESSAGES.PROFILE.LAST_K(dateStr)}\n` +
+        `${MESSAGES.PROFILE.PS()}\n`
+        ;
+
 
       await ctx.reply(msg, { parse_mode: 'Markdown' });
     } catch (error) {
-      console.error('❌ Профіль:', error);
-      await ctx.reply('❌ Помилка отримання профілю');
+      console.error('❌ Профиль:', error);
+      await ctx.reply(MESSAGES.PROFILE.ERROR);
     }
   });
 
-  // Адмін
+  // Админ
   bot.hears(BUTTONS.ADMIN, async (ctx: Context) => {
     try {
-      await ctx.reply(MESSAGES.ADMIN);
+      // @ts-ignore - explicitly disable parsing to avoid errors with underscores
+      await ctx.reply(MESSAGES.ADMIN_CONTACT, { parse_mode: undefined });
     } catch (error) {
-      console.error('❌ Адмін:', error);
+      console.error('❌ Админ:', error);
     }
   });
 
-  // Купити пост
+  // Купить пост
   bot.hears(BUTTONS.BUY, async (ctx: Context) => {
     try {
       if (!ctx.from?.id) return;
-      await ctx.reply('💰 Обери спосіб оплати:', { reply_markup: paymentKeyboard });
+      await ctx.reply(MESSAGES.PAYMENT.SELECT_METHOD, { reply_markup: PAYMENT_KEYBOARD });
     } catch (error) {
-      console.error('❌ Купити:', error);
-      await ctx.reply('❌ Помилка. Спробуй знову.');
+      console.error('❌ Купить:', error);
+      await ctx.reply(MESSAGES.ERRORS.GENERIC);
     }
   });
 
-  // /reset (адмін)
+  // /reset (админ)
   bot.command('reset', async (ctx: Context) => {
     const userId = ctx.from?.id;
     const chatId = ctx.chat?.id;
@@ -90,8 +100,11 @@ export function registerCommands(bot: Bot) {
 
     try {
       const member = await ctx.getChatMember(userId);
-      if (!['creator', 'administrator'].includes(member.status)) {
-        await ctx.reply('❌ Тільки для адмінів');
+      const isChatAdmin = ['creator', 'administrator'].includes(member.status);
+      const isBotAdmin = ADMIN_IDS.includes(userId);
+
+      if (!isChatAdmin && !isBotAdmin) {
+        await ctx.reply(MESSAGES.ERRORS.NOT_ADMIN);
         return;
       }
 
@@ -99,11 +112,22 @@ export function registerCommands(bot: Bot) {
       const targetId = args?.[1] || userId.toString();
 
       limiterService.reset(targetId);
-      await ctx.reply(targetId === userId.toString() ? '✅ Твій ліміт скинуто!' : `✅ Ліміт скинуто для ${targetId}`);
-      console.log(`🔄 Адмін ${userId} → reset ${targetId}`);
+      await ctx.reply(targetId === userId.toString() ? MESSAGES.RESET_SUCCESS_ME : MESSAGES.RESET_SUCCESS_OTHER(targetId));
+      console.log(`🔄 Админ ${userId} → reset ${targetId}`);
     } catch (error) {
       console.error('❌ Reset:', error);
-      await ctx.reply('❌ Помилка. Працює тільки в групі.');
+      await ctx.reply(MESSAGES.ERRORS.IN_GROUP_ONLY);
+    }
+  });
+
+  // /getMyID
+  bot.command('getmyid', async (ctx: Context) => {
+    // Только в ЛС
+    if (ctx.chat?.type !== 'private') return;
+
+    const userId = ctx.from?.id;
+    if (userId) {
+      await ctx.reply(`Твой ID: \`${userId}\``, { parse_mode: 'Markdown' });
     }
   });
 }
