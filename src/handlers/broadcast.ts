@@ -116,7 +116,7 @@ export function registerBroadcast(bot: Bot) {
             return;
         }
 
-        const type = ctx.message?.text?.includes('testPost') ? 'test' : 'all';
+        const type = ctx.message?.text?.includes('testpost') ? 'test' : 'all';
         const label = type === 'test' ? 'ТЕСТ (только себе)' : 'МАССОВАЯ (всем юзерам)';
 
         adminStates.set(ctx.from.id, { step: 'WAITING_FOR_CONTENT', type });

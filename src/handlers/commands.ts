@@ -18,6 +18,12 @@ export function registerCommands(bot: Bot) {
     if (ctx.chat?.type !== 'private') return;
 
     try {
+      // Create user if not exists or update info
+      await userBalanceService.ensureUser(ctx.from?.id.toString()!, {
+        username: ctx.from?.username,
+        firstName: ctx.from?.first_name
+      }, true); // forceCheck: проверять БД реально, на случай ручного удаления
+
       await ctx.reply(MESSAGES.START, { reply_markup: mainKeyboard });
     } catch (error) {
       console.error('❌ /start:', error);

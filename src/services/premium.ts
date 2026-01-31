@@ -10,6 +10,8 @@ interface UserBalance {
   lastPostDate?: Date;
   createdAt: Date;
   lastUpdate: Date;
+  totalPayStars: number;
+  totalPayCrypto: number;
 }
 
 interface Transaction {
@@ -31,6 +33,18 @@ interface UserInfo {
 
 const cache = new Map<string, UserBalance>();
 
+/** Helper safely converts Firestore Timestamp / Date / String to Date */
+const toDate = (val: any): Date => {
+  if (!val) return new Date();
+  if (typeof val.toDate === 'function') return val.toDate(); // Firestore Timestamp
+  if (val instanceof Date) return val;
+  if (typeof val === 'string' || typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? new Date() : d;
+  }
+  return new Date();
+};
+
 /** Конвертирует Firestore doc в UserBalance */
 const toBalance = (id: string, data: FirebaseFirestore.DocumentData): UserBalance => ({
   userId: id,
@@ -39,9 +53,11 @@ const toBalance = (id: string, data: FirebaseFirestore.DocumentData): UserBalanc
   paidMessages: data.paidMessages || 0,
   totalSpent: data.totalSpent || 0,
   totalPaidPosts: data.totalPaidPosts || 0,
-  lastPostDate: data.lastPostDate?.toDate(),
-  createdAt: data.createdAt?.toDate() || new Date(),
-  lastUpdate: data.lastUpdate?.toDate() || new Date(),
+  lastPostDate: data.lastPostDate ? toDate(data.lastPostDate) : undefined,
+  createdAt: toDate(data.createdAt),
+  lastUpdate: toDate(data.lastUpdate),
+  totalPayStars: data.totalPayStars || 0,
+  totalPayCrypto: data.totalPayCrypto || 0,
 });
 
 export const userBalanceService = {
@@ -80,6 +96,8 @@ export const userBalanceService = {
       paidMessages: 0,
       totalSpent: 0,
       totalPaidPosts: 0,
+      totalPayStars: 0,
+      totalPayCrypto: 0,
       createdAt: new Date(),
       lastUpdate: new Date(),
     };
@@ -112,6 +130,15 @@ export const userBalanceService = {
       const data = doc.data() || {};
       const newBalance = (data.paidMessages || 0) + count;
 
+      const currentStars = data.totalPayStars || 0;
+      const currentCrypto = data.totalPayCrypto || 0;
+
+      let newStars = currentStars;
+      let newCrypto = currentCrypto;
+
+      if (source === 'stars') newStars += count;
+      if (source === 'cryptobot') newCrypto += count;
+
       // Update User
       t.set(
         userRef,
@@ -121,8 +148,11 @@ export const userBalanceService = {
           ...(info?.firstName && { firstName: info.firstName }),
 
           paidMessages: newBalance,
-          totalSpent: (data.totalSpent || 0) + count,
+          // Requirement: общее количество купленных постов за всех время которое суммирует 1 и 2 пункт
+          totalSpent: newStars + newCrypto,
           totalPaidPosts: data.totalPaidPosts || 0,
+          totalPayStars: newStars,
+          totalPayCrypto: newCrypto,
           createdAt: data.createdAt || new Date(),
           lastUpdate: new Date(),
         },
@@ -209,6 +239,89 @@ export const userBalanceService = {
   },
 
 
+
+  /** Проверить существование пользователя и создать при необходимости */
+  async ensureUser(userId: string, info?: UserInfo, forceCheck = false): Promise<void> {
+    if (!userId) return;
+
+    // 1. Проверяем кэш (если не forceCheck)
+    if (!forceCheck && cache.has(userId)) {
+      const cached = cache.get(userId)!;
+      // Если данные изменились, обновляем (но в профиле это НЕ меняет lastPostDate)
+      if (
+        (info?.username && cached.username !== info.username) ||
+        (info?.firstName && cached.firstName !== info.firstName)
+      ) {
+        // Update cache immediately
+        cached.username = info.username || cached.username;
+        cached.firstName = info.firstName || cached.firstName;
+        // Background update to DB
+        const updateData: any = { lastUpdate: new Date() };
+        if (info.username !== undefined) updateData.username = info.username;
+        if (info.firstName !== undefined) updateData.firstName = info.firstName;
+
+        db.collection('users').doc(userId).set(updateData, { merge: true })
+          .catch(err => console.error('❌ Background update error:', err));
+      }
+      return;
+    }
+
+    // Если forceCheck и юзер был в кэше, удалим временно, чтобы логика ниже отработала "честно"
+    // Но осторожно: если мы просто удалим, а в БД он есть, мы его не пересоздадим (см. ниже логику !doc.exists)
+    // Поэтому просто идем дальше к чтению из БД.
+
+    const userRef = db.collection('users').doc(userId);
+
+    try {
+      await db.runTransaction(async (t) => {
+        const doc = await t.get(userRef);
+
+        if (!doc.exists) {
+          // Создаем нового
+          const newUser: UserBalance = {
+            userId,
+            username: info?.username,
+            firstName: info?.firstName,
+            paidMessages: 0,
+            totalSpent: 0,
+            totalPaidPosts: 0,
+            totalPayStars: 0,
+            totalPayCrypto: 0,
+            createdAt: new Date(),
+            lastUpdate: new Date(),
+            // lastPostDate НЕ ставим, чтобы в профиле было "—"
+          };
+
+          // Remove undefined keys no longer needed because ignoreUndefinedProperties: true
+          // JSON.parse(JSON.stringify(newUser)) was causing Date to string conversion issue!
+          t.set(userRef, newUser);
+          console.log(`👤 New User Created: ${userId}`);
+        } else {
+          // Если существует (но нет в кэше) - добавляем в кэш + обновляем инфо
+          const data = doc.data()!;
+          if (
+            (info?.username && data.username !== info.username) ||
+            (info?.firstName && data.firstName !== info.firstName)
+          ) {
+            t.set(userRef, {
+              username: info?.username || data.username,
+              firstName: info?.firstName || data.firstName,
+              lastUpdate: new Date()
+            }, { merge: true });
+          }
+        }
+      });
+
+      // Refresh cache
+      const finalDoc = await userRef.get();
+      if (finalDoc.exists) {
+        cache.set(userId, toBalance(userId, finalDoc.data()!));
+      }
+
+    } catch (error) {
+      console.error('❌ ensureUser error:', error);
+    }
+  },
 
   /** Удалить старые транзакции (старше N дней) */
   async deleteOldTransactions(days: number): Promise<void> {
