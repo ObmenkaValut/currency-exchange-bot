@@ -10,7 +10,7 @@ export const ADMIN_IDS: number[] = [300608298, 130552908, 5257577172]; // ID Ð°Ð
 // === Pricing ===
 // === Limits ===
 export const MAX_POSTS_PER_PURCHASE = 100;
-export const FREE_DAILY_LIMIT = 3;
+export const FREE_DAILY_LIMIT = 30000000;
 export const MAX_LENGTH_FREE = 120;
 export const MAX_LENGTH_PAID = 360;
 
