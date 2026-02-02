@@ -45,16 +45,16 @@ async function start() {
 
   // === Scheduled Message ===
   console.log(`⏰ Scheduled message: every ${SCHEDULED_MESSAGE_INTERVAL_HOURS}h to chat ${TARGET_CHAT_ID}`);
-  setInterval(async () => {
-    try {
-      if (!TARGET_CHAT_ID) return; // Skip if not configured
-      const linkPreview = { is_disabled: true };
-      await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
-      console.log('✅ Scheduled message sent');
-    } catch (error) {
-      console.error('❌ Scheduled message failed:', error);
-    }
-  }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
+  // setInterval(async () => {
+  //   try {
+  //     if (!TARGET_CHAT_ID) return; // Skip if not configured
+  //     const linkPreview = { is_disabled: true };
+  //     await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
+  //     console.log('✅ Scheduled message sent');
+  //   } catch (error) {
+  //     console.error('❌ Scheduled message failed:', error);
+  //   }
+  // }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 

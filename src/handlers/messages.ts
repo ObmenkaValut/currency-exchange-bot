@@ -57,53 +57,53 @@ export async function handleGroupMessage(ctx: Context) {
     const maxLen = isPaid ? MAX_LENGTH_PAID : MAX_LENGTH_FREE;
 
     // 4. Длина
-    if (text.length > maxLen) {
-      const hint = isPaid ? '' : MESSAGES.WARNINGS.LENGTH_HINT_FREE(botLink);
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LENGTH(maxLen, hint)}`);
-      console.log(`🚫 Длина ${text.length}>${maxLen} от ${userId}`);
-      return;
-    }
+    // if (text.length > maxLen) {
+    //   const hint = isPaid ? '' : MESSAGES.WARNINGS.LENGTH_HINT_FREE(botLink);
+    //   await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LENGTH(maxLen, hint)}`);
+    //   console.log(`🚫 Длина ${text.length}>${maxLen} от ${userId}`);
+    //   return;
+    // }
 
     // 5. Эмодзи (free only)
-    if (!isPaid && emojiPattern.test(text)) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.EMOJI(botLink)}`);
-      console.log(`🚫 Эмодзи от ${userId}`);
-      return;
-    }
+    // if (!isPaid && emojiPattern.test(text)) {
+    //   await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.EMOJI(botLink)}`);
+    //   console.log(`🚫 Эмодзи от ${userId}`);
+    //   return;
+    // }
 
     // 5.1 Ссылки и контакты (free only)
     const entities = ctx.message.entities || ctx.message.caption_entities || [];
     const hasLink = entities.some(e => ['url', 'text_link', 'mention', 'email'].includes(e.type));
     const hasTme = text.includes('t.me'); // Доп. проверка на t.me без http
 
-    if (!isPaid && (hasLink || hasTme)) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LINKS(botLink)}`);
-      console.log(`🚫 Ссылка/Контакт от ${userId}`);
-      return;
-    }
+    // if (!isPaid && (hasLink || hasTme)) {
+    //   await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LINKS(botLink)}`);
+    //   console.log(`🚫 Ссылка/Контакт от ${userId}`);
+    //   return;
+    // }
 
     // 6. Лимит (free only)
-    if (!isPaid && limiterService.getCount(userId.toString()) >= FREE_DAILY_LIMIT) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`);
-      console.log(`🚫 Лимит ${userId}`);
-      return;
-    }
+    // if (!isPaid && limiterService.getCount(userId.toString()) >= FREE_DAILY_LIMIT) {
+    //   await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`);
+    //   console.log(`🚫 Лимит ${userId}`);
+    //   return;
+    // }
 
     // 7. & 8. AI проверки (только для бесплатных)
     if (!isPaid) {
       // 7. AI rate limit
-      if (!limiterService.checkAiRateLimit(userId.toString())) {
-        await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_RATE}`);
-        console.log(`🚫 AI rate ${userId}`);
-        return;
-      }
+      // if (!limiterService.checkAiRateLimit(userId.toString())) {
+      //   await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_RATE}`);
+      //   console.log(`🚫 AI rate ${userId}`);
+      //   return;
+      // }
 
       // 8. AI модерация
       const mod = await moderationService.moderateText(text);
       if (!mod.allowed) {
         // Reason с AI тоже лучше эскейпить на всякий случай
         const safeReason = escapeMarkdown(mod.reason);
-        await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_MODERATION(safeReason)}`);
+        // await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_MODERATION(safeReason)}`);
         console.log(`🚫 AI: ${mod.reason} от ${userId}`);
 
         // === LOGGING TO CHANNEL ===
