@@ -18,7 +18,7 @@ export const MAX_LENGTH_PAID = 360;
 export const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 export const AI_RATE_LIMIT = 10;
 export const AI_RATE_WINDOW = 60 * 1000; // 1 мин
-export const AI_PROMPT_TEMPLATE = `Канал обмена валют/крипты. Пропускай ТОЛЬКО если текст явно про покупку/продажу/обмен валют (USD, EUR, UAH, BTC, USDT и т.д.). Блокируй всё остальное: спам, бессмысленные символы, нерелевантное.
+export const AI_PROMPT_TEMPLATE = `Канал обмена валют/крипты. Пропускай ТОЛЬКО если текст явно про покупку/продажу/обмен валют (USD, EUR, UAH, BTC, USDT и т.д.). Блокируй всё остальное: спам, продажу курсов, бессмысленные символы, нерелевантное, услуги разблокировок счетов и все схожее.
 
 "{TEXT}"
 
