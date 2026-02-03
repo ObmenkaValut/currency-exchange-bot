@@ -36,7 +36,7 @@ setInterval(() => {
   if (spamLog.size > MAX_CACHE_SIZE) spamLog.clear();
   if (bannedUsers.size > MAX_CACHE_SIZE) bannedUsers.clear();
 
-  console.log(`🧹 Очистка кэша: daily=${dailyLimits.size}, ai=${aiRateLimits.size}`);
+  console.log(`📊 Статус кэша (после проверки): daily=${dailyLimits.size}, ai=${aiRateLimits.size}`);
 }, CLEANUP_INTERVAL);
 
 // === Service ===

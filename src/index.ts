@@ -16,53 +16,57 @@ import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT } from './config/constants';
 
-// === Config ===
+// === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const IS_PROD = process.env.NODE_ENV === 'production';
 const CRYPTO_TOKEN = process.env.CRYPTO_BOT_TOKEN || '';
 
-// === Validation ===
+// === Валидация переменных окружения ===
 if (!CRYPTO_TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не установлен');
-if (IS_PROD && !WEBHOOK_URL) throw new Error('❌ WEBHOOK_URL required for production');
+if (IS_PROD && !WEBHOOK_URL) throw new Error('❌ WEBHOOK_URL обязателен для production режима');
 if (IS_PROD && WEBHOOK_URL && !WEBHOOK_URL.startsWith('https://')) {
-  throw new Error('❌ WEBHOOK_URL must start with https://');
+  throw new Error('❌ WEBHOOK_URL должен начинаться с https://');
 }
 
 async function start() {
-  console.log(`🚀 Starting...Mode: ${IS_PROD ? 'WEBHOOK' : 'POLLING'} `);
+  console.log(`🚀 Запуск бота... Режим: ${IS_PROD ? 'WEBHOOK' : 'POLLING'}`);
 
+  // Загрузка всех балансов пользователей в кэш
   await userBalanceService.loadAllBalances();
 
+  // === Автоматическая очистка старых транзакций ===
+  console.log(`🧹 Настроена очистка: хранение ${TRANSACTION_RETENTION_DAYS} дней, проверка каждые ${TRANSACTION_CLEANUP_INTERVAL / 1000 / 60} мин`);
 
-  // Автоматическая очистка старых транзакций
-  console.log(`🧹 Cleanup configured: keep ${TRANSACTION_RETENTION_DAYS} days, check every ${TRANSACTION_CLEANUP_INTERVAL / 1000 / 60} min`);
-
+  // Первая очистка при старте
   await userBalanceService.deleteOldTransactions(TRANSACTION_RETENTION_DAYS);
-  setInterval(() => {
-    console.log('🧹 Daily cleanup started...');
+
+  // Периодическая очистка
+  setInterval(async () => {
+    console.log('🧹 Запуск ежедневной очистки транзакций...');
+    await userBalanceService.deleteOldTransactions(TRANSACTION_RETENTION_DAYS);
   }, TRANSACTION_CLEANUP_INTERVAL);
 
-  // === Scheduled Message ===
-  console.log(`⏰ Scheduled message: every ${SCHEDULED_MESSAGE_INTERVAL_HOURS}h to chat ${TARGET_CHAT_ID}`);
+  // === Плановые сообщения (закомментировано) ===
+  console.log(`⏰ Плановые сообщения: каждые ${SCHEDULED_MESSAGE_INTERVAL_HOURS}ч в чат ${TARGET_CHAT_ID}`);
   // setInterval(async () => {
   //   try {
-  //     if (!TARGET_CHAT_ID) return; // Skip if not configured
+  //     if (!TARGET_CHAT_ID) return; // Пропускаем, если не настроено
   //     const linkPreview = { is_disabled: true };
   //     await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
-  //     console.log('✅ Scheduled message sent');
+  //     console.log('✅ Плановое сообщение отправлено');
   //   } catch (error) {
-  //     console.error('❌ Scheduled message failed:', error);
+  //     console.error('❌ Ошибка отправки планового сообщения:', error);
   //   }
   // }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 
-  // === Global Formatting ===
-  // Устанавливаем Markdown как стандарт для всех сообщений
+  // === Глобальное форматирование сообщений ===
+  // Устанавливаем Markdown как стандарт и автоматически обрезаем пробелы
   bot.api.config.use(async (prev, method, payload, signal) => {
     if (payload && typeof payload === 'object') {
-      // Global Trim: удаляем лишние пробелы/отступы из текста сообщений
+      // Автоматическое удаление лишних пробелов/отступов
       if ('text' in payload && typeof (payload as any).text === 'string') {
         (payload as any).text = (payload as any).text.trim();
       }
@@ -70,7 +74,7 @@ async function start() {
         (payload as any).caption = (payload as any).caption.trim();
       }
 
-      // Default Parse Mode
+      // Markdown по умолчанию для всех сообщений
       if (!('parse_mode' in payload)) {
         (payload as any).parse_mode = 'Markdown';
       }
@@ -80,87 +84,97 @@ async function start() {
 
   // === Middleware ===
 
-  // === Anti-Spam Middleware (Private DM Only) ===
+  // === Антиспам защита (только для личных сообщений) ===
   bot.use(async (ctx, next) => {
-    // Работаем только в ЛС (Private) и если есть юзер
+    // Проверяем только в личных чатах
     if (ctx.chat?.type === 'private' && ctx.from?.id) {
       const spamCheck = limiterService.checkSpam(ctx.from.id.toString());
 
       if (spamCheck.isBanned) {
-        // Вычисляем сколько осталось (в минутах, округляем вверх)
+        // Вычисляем оставшееся время бана (в минутах, округляем вверх)
         const minutesLeft = Math.ceil((spamCheck.banExpiresAt! - Date.now()) / 1000 / 60);
 
-        // Отвечаем юзеру (чтобы он знал)
+        // Уведомляем пользователя о бане
         await ctx.reply(MESSAGES.WARNINGS.SPAM_BAN(minutesLeft));
 
-        return; // Стоп, дальше не обрабатываем
+        return; // Прерываем обработку
       }
     }
     return next();
   });
 
+  // Сессии для хранения состояния пользователей
   // @ts-ignore
   bot.use(session({ initial: () => ({ step: 'idle' }) }));
 
-  // 1. Фильтр старых сообщений
+  // Фильтр старых сообщений (защита от обработки сообщений после перезапуска)
   bot.use(async (ctx, next) => {
     if (ctx.message?.date) {
       const age = Date.now() / 1000 - ctx.message.date;
       if (age > MAX_MESSAGE_AGE) {
-        console.log(`⏭️ Skip old msg(${Math.floor(age / 60)}m)`);
+        console.log(`⏭️ Пропущено старое сообщение (${Math.floor(age / 60)} мин)`);
         return;
       }
     }
     return next();
   });
 
-
-
-
+  // Логирование и обработка ошибок
   bot.use(loggerMiddleware);
   bot.catch((err) => errorHandler(err, err.ctx));
 
-  // === Handlers ===
+  // === Регистрация обработчиков ===
   registerCommands(bot);
   registerPayments(bot);
   registerBroadcast(bot);
 
+  // Обработка текстовых сообщений в группах
   bot
     .on('message:text')
     .filter((ctx) => ['supergroup', 'group'].includes(ctx.chat?.type || ''), handleGroupMessage);
 
+  // Обработка новых участников группы
   bot.on('message:new_chat_members', handleNewMember);
 
-  // === Express ===
+  // === Express сервер ===
   const app = express();
+
+  // Middleware для обработки JSON с сохранением raw body (нужно для верификации подписи CryptoBot)
   /* eslint-disable @typescript-eslint/no-explicit-any */
   app.use(express.json({
     verify: (req: any, res, buf) => {
       req.rawBody = buf;
     }
   }));
+
+  // Роутеры
   app.use('/webhook', createWebhookRouter(CRYPTO_TOKEN));
   app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+  // Настройка webhook для production
   if (IS_PROD && WEBHOOK_URL) {
     app.post('/telegram', webhookCallback(bot, 'express'));
     await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, { drop_pending_updates: true });
-    console.log(`📡 Webhook: ${WEBHOOK_URL}/telegram`);
+    console.log(`📡 Webhook установлен: ${WEBHOOK_URL}/telegram`);
   }
 
+  // Запуск сервера
   app.listen(PORT, async () => {
-    console.log(`🌐 Express :${PORT}`);
+    console.log(`🌐 Express сервер запущен на порту ${PORT}`);
+
+    // Для development режима используем polling
     if (!IS_PROD) {
       await bot.api.deleteWebhook({ drop_pending_updates: true });
       await bot.start();
-      console.log('🔄 Polling mode');
+      console.log('🔄 Режим polling активирован');
     }
   });
 
-  console.log('✅ Bot started!');
+  console.log('✅ Бот успешно запущен!');
 }
 
+// Запуск приложения с обработкой ошибок
 start().catch((err) => {
-  console.error('❌ Startup error:', err);
+  console.error('❌ Критическая ошибка при запуске:', err);
   process.exit(1);
 });
