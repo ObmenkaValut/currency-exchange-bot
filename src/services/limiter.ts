@@ -6,29 +6,37 @@ import {
   MAX_CACHE_SIZE,
 } from '../config/constants';
 
+// === Константы для антиспам защиты ===
+const SPAM_WINDOW_MS = 10 * 1000; // 10 секунд
+const SPAM_MESSAGE_THRESHOLD = 10; // Максимум сообщений в окне
+const SPAM_BAN_DURATION_MS = 3 * 60 * 1000; // Бан на 3 минуты
+const AI_MAX_REQUESTS_PER_WINDOW = 1; // 1 запрос к AI в окне
+
 // === In-memory кэши ===
 const dailyLimits = new Map<string, UserLimit>();
 const aiRateLimits = new Map<string, { count: number; resetAt: number }>();
-// Spam Protection
+// Антиспам защита
 const spamLog = new Map<string, number[]>(); // userId -> [timestamp1, timestamp2...]
 const bannedUsers = new Map<string, number>(); // userId -> banExpiresAt
 
-// === Cleanup каждый час ===
+// === Автоматическая очистка каждый час ===
 setInterval(() => {
   const today = getTodayDate();
   const now = Date.now();
 
+  // Удаляем устаревшие записи
   dailyLimits.forEach((v, k) => v.date !== today && dailyLimits.delete(k));
   aiRateLimits.forEach((v, k) => v.resetAt < now && aiRateLimits.delete(k));
 
+  // Применяем лимит размера кэша
   enforceMapLimit(dailyLimits, MAX_CACHE_SIZE);
   enforceMapLimit(aiRateLimits, MAX_CACHE_SIZE);
-  // Optional: spamLog cleans itself on access, bannedUsers cleans on access.
-  // But we can limit size to avoid memory leak if many users spam
+
+  // Защита от утечек памяти при массовом спаме
   if (spamLog.size > MAX_CACHE_SIZE) spamLog.clear();
   if (bannedUsers.size > MAX_CACHE_SIZE) bannedUsers.clear();
 
-  console.log(`🧹 Cleanup: daily=${dailyLimits.size}, ai=${aiRateLimits.size}`);
+  console.log(`🧹 Очистка кэша: daily=${dailyLimits.size}, ai=${aiRateLimits.size}`);
 }, CLEANUP_INTERVAL);
 
 // === Service ===
@@ -58,9 +66,15 @@ export const limiterService = {
     const now = Date.now();
     const limit = aiRateLimits.get(userId);
 
+    // Если нет записи или окно истекло - разрешаем
     if (!limit || limit.resetAt < now) {
       aiRateLimits.set(userId, { count: 1, resetAt: now + AI_RATE_WINDOW });
       return true;
+    }
+
+    // ИСПРАВЛЕНИЕ: проверяем лимит запросов
+    if (limit.count >= AI_MAX_REQUESTS_PER_WINDOW) {
+      return false; // Превышен лимит
     }
 
     limit.count++;
@@ -70,28 +84,27 @@ export const limiterService = {
   checkSpam(userId: string): { isBanned: boolean; banExpiresAt?: number } {
     const now = Date.now();
 
-    // 1. Check if already banned
+    // 1. Проверяем, не забанен ли пользователь
     const banExpires = bannedUsers.get(userId);
     if (banExpires) {
       if (banExpires > now) {
         return { isBanned: true, banExpiresAt: banExpires };
-      } else {
-        bannedUsers.delete(userId); // Ban expired
       }
+      // Бан истек - удаляем
+      bannedUsers.delete(userId);
     }
 
-    // 2. Update spam logs
+    // 2. Обновляем историю сообщений
     let logs = spamLog.get(userId) || [];
-    // Clean old logs (> 10 sec)
-    logs = logs.filter(time => now - time < 10000);
+    // Удаляем старые записи (за пределами окна)
+    logs = logs.filter(time => now - time < SPAM_WINDOW_MS);
     logs.push(now);
 
-    // 3. Check for spam: > 10 messages in 10 seconds
-    if (logs.length > 10) {
-      // Ban for 3 minutes
-      const banTime = now + 3 * 60 * 1000;
+    // 3. Проверяем на спам
+    if (logs.length > SPAM_MESSAGE_THRESHOLD) {
+      const banTime = now + SPAM_BAN_DURATION_MS;
       bannedUsers.set(userId, banTime);
-      spamLog.delete(userId); // Reset logs
+      spamLog.delete(userId); // Очищаем историю
       return { isBanned: true, banExpiresAt: banTime };
     }
 
