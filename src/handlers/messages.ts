@@ -38,6 +38,9 @@ export async function handleGroupMessage(ctx: Context) {
   if (!ctx.chat || ctx.chat.type === 'private') return;
   if (!ctx.message?.text || !ctx.from) return;
 
+  // Игнорируем лог-канал (бот там только отправляет, не обрабатывает)
+  if (ctx.chat.id === LOG_CHANNEL_ID) return;
+
   const { id: userId, is_bot } = ctx.from;
   const { message_id: msgId } = ctx.message;
   const { id: chatId } = ctx.chat;

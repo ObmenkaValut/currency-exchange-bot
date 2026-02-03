@@ -14,7 +14,7 @@ import { registerBroadcast } from './handlers/broadcast';
 import { createWebhookRouter } from './handlers/webhook';
 import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT } from './config/constants';
+import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, ALLOWED_GROUP_IDS } from './config/constants';
 
 // === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -83,6 +83,31 @@ async function start() {
   });
 
   // === Middleware ===
+
+  // === Whitelist групп ===
+  bot.use(async (ctx, next) => {
+    const chatId = ctx.chat?.id;
+    const chatType = ctx.chat?.type;
+
+    // Пропускаем личные сообщения (бот должен работать в ЛС)
+    if (chatType === 'private') return next();
+
+    // Проверяем whitelist для групп и каналов
+    if (chatType === 'supergroup' || chatType === 'group' || chatType === 'channel') {
+      if (!ALLOWED_GROUP_IDS.includes(chatId!)) {
+        console.log(`⛔ Неразрешенная группа/канал: ${chatId}. Покидаю...`);
+        try {
+          await ctx.leaveChat();
+          console.log(`✅ Успешно покинул чат ${chatId}`);
+        } catch (error) {
+          console.error(`❌ Ошибка при попытке покинуть чат ${chatId}:`, error instanceof Error ? error.message : error);
+        }
+        return; // Прерываем обработку
+      }
+    }
+
+    return next();
+  });
 
   // === Антиспам защита (только для личных сообщений) ===
   bot.use(async (ctx, next) => {

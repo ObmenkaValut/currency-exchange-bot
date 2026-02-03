@@ -6,6 +6,7 @@
 export const BOT_USERNAME = 'currExchange_robot';
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 export const ADMIN_IDS: number[] = [300608298, 130552908, 5257577172]; // ID админов для доступа к /broadcast в привате
+export const ALLOWED_GROUP_IDS: number[] = [-1003735325551, -1001513641809, -1003787423599]; // Верифицированные группы
 
 // === Лимиты ===
 export const MAX_POSTS_PER_PURCHASE = 100;
@@ -25,10 +26,10 @@ export const AI_PROMPT_TEMPLATE = `Канал обмена валют/крипт
 
 "{TEXT}"
 
-Верни JSON. Причина - МАКСИМУМ 3 СЛОВА.
+Верни JSON. Причина - МАКСИМУМ 3 СЛОВА. (Примеры: "не про обмен" / "нецензурная лексика")
 {"allowed":true/false,"reason":"макс 3 слова"}`
 
-export const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+export const LOG_CHANNEL_ID = -1003787423599; // Канал для логов (бот не обрабатывает сообщения)
 
 // === Таймеры ===
 export const MAX_MESSAGE_AGE = 5 * 60; // 5 мин (сек)
@@ -45,7 +46,7 @@ export const MAX_CACHE_SIZE = 10000;
 
 // === Плановые сообщения ===
 export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 3; // Периодичность в часах
-export const TARGET_CHAT_ID = process.env.GROUP_ID; // ID чата, куда отправлять (ЗАМЕНИТЬ НА НУЖНЫЙ)
+export const TARGET_CHAT_ID = process.env.GROUP_ID; // ID чата, куда отправлять.
 export const SCHEDULED_MESSAGE_TEXT = '⚠️ *ВНИМАНИЕ. АДМИНИСТРАЦИЯ ЧАТА НЕ НЕСЕТ ОТВЕТСТВЕННОСТИ ЗА УЧАСТНИКОВ СДЕЛКИ.*';
 
 // === Вспомогательные функции ===
