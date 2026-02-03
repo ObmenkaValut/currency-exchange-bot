@@ -1,7 +1,8 @@
 import { Context, Bot } from 'grammy';
 import { db } from '../config/firebase';
+import { ADMIN_IDS, MESSAGES } from '../config/constants';
 
-// === State Management ===
+// === Управление состоянием ===
 type AdminState =
     | { step: 'IDLE' }
     | { step: 'WAITING_FOR_CONTENT'; type: 'test' | 'all' }
@@ -10,12 +11,7 @@ type AdminState =
 // Сохраняем состояние в памяти (adminId -> state)
 const adminStates = new Map<number, AdminState>();
 
-// === Helpers ===
-
-import { ADMIN_IDS, MESSAGES } from '../config/constants';
-
-// ...
-
+// === Вспомогательные функции ===
 const isAdmin = async (ctx: Context): Promise<boolean> => {
     if (!ctx.from) return false;
     // 1. Проверка по hardcoded ID (работает всегда, даже в привате)
@@ -36,7 +32,7 @@ const isAdmin = async (ctx: Context): Promise<boolean> => {
 
 const resetState = (userId: number) => adminStates.set(userId, { step: 'IDLE' });
 
-// === Broadcast Logic ===
+// === Логика рассылки ===
 
 /**
  * Рассылает сообщение пользователям из базы.
@@ -63,7 +59,7 @@ async function performBroadcast(
         return;
     }
 
-    // ALL Post Mode
+    // Режим массовой рассылки
     await ctx.reply(MESSAGES.BROADCAST.STARTING);
 
     let success = 0;
@@ -79,14 +75,13 @@ async function performBroadcast(
         const stream = db.collection('users').stream();
 
         for await (const doc of stream) {
-            const userId = (doc as any).id; // stream returns internal objects that have .id
+            const userId = (doc as any).id; // stream возвращает внутренние объекты с полем .id
             try {
                 // copyMessage возвращает MessageId, который нам тут не нужен, но мы ждем завершения
                 await ctx.api.copyMessage(userId, sourceChatId, sourceMsgId);
                 success++;
             } catch (e) {
                 fail++;
-                // console.warn(`Failed to send to ${userId}:`, e);
             }
 
             // Rate limit: 50ms (~20 msgs/sec) - безопасно для лимитов Telegram (30/sec)
@@ -96,12 +91,12 @@ async function performBroadcast(
         await ctx.reply(MESSAGES.BROADCAST.SUMMARY(total, success, fail));
 
     } catch (error) {
-        console.error('Broadcast error:', error);
+        console.error('Ошибка рассылки:', error);
         await ctx.reply(MESSAGES.BROADCAST.ERROR_CRITICAL);
     }
 }
 
-// === Handlers ===
+// === Обработчики ===
 
 export function registerBroadcast(bot: Bot) {
 
@@ -165,7 +160,7 @@ export function registerBroadcast(bot: Bot) {
                 MESSAGES.BROADCAST.TARGET(target) +
                 MESSAGES.BROADCAST.CONFIRM_PROMPT
             );
-            return; // Stop propagation
+            return; // Остановка распространения
         }
 
         // 2. Подтверждение
@@ -181,7 +176,7 @@ export function registerBroadcast(bot: Bot) {
                 } else {
                     // Запускаем в фоне для массовой рассылки, чтобы не блочить ответ
                     performBroadcast(ctx, chatId, messageId, false).catch(e => {
-                        console.error('Background broadcast error:', e);
+                        console.error('Ошибка фоновой рассылки:', e);
                     });
                 }
             } else if (text && MESSAGES.BROADCAST.BTN_NO.includes(text)) {
@@ -190,7 +185,7 @@ export function registerBroadcast(bot: Bot) {
             } else {
                 await ctx.reply(MESSAGES.BROADCAST.INVALID_INPUT);
             }
-            return; // Stop propagation
+            return; // Остановка распространения
         }
 
         return next();
