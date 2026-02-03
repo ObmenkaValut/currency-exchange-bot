@@ -1,4 +1,4 @@
-/** CryptoBot Webhook */
+/** Webhook от CryptoBot при оплате инвойса */
 export interface CryptoBotWebhook {
   update_id: number;
   update_type: 'invoice_paid';
@@ -18,6 +18,6 @@ export interface CryptoBotWebhook {
     status: 'paid';
     created_at: string;
     paid_at: string;
-    payload: string; // JSON: { userId, count }
+    payload: string; // JSON-строка: { userId, count }
   };
 }
