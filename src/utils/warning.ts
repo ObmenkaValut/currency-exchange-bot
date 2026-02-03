@@ -16,9 +16,8 @@ export async function sendWarning(ctx: Context, text: string): Promise<void> {
     if (oldMessageId) {
         try {
             await ctx.api.deleteMessage(chatId, oldMessageId);
-        } catch (error) {
+        } catch {
             // Игнорируем ошибку, если сообщение уже удалено или не найдено
-            // console.warn('Could not delete old warning:', error);
         }
     }
 
@@ -27,6 +26,6 @@ export async function sendWarning(ctx: Context, text: string): Promise<void> {
         const msg = await ctx.reply(text);
         lastWarningIds.set(chatId, msg.message_id);
     } catch (error) {
-        console.error('Failed to send warning:', error);
+        console.error('❌ Ошибка отправки предупреждения:', error instanceof Error ? error.message : error);
     }
 }
