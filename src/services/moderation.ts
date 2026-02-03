@@ -6,7 +6,15 @@ interface ModerationResult {
   reason: string;
 }
 
-const MAX_TEXT_LENGTH = 4000;
+interface AIModerationResponse {
+  allowed?: boolean;
+  reason?: string;
+}
+
+// === Константы ===
+const MAX_TEXT_LENGTH = 4000; // Максимальная длина текста для модерации
+const MAX_RETRIES = 3; // Количество попыток при ошибках API
+const RETRY_BASE_DELAY_MS = 1000; // Базовая задержка для retry (1s, 2s, 3s...)
 
 export const moderationService = {
   async moderateText(text: string): Promise<ModerationResult> {
@@ -14,14 +22,13 @@ export const moderationService = {
     if (!text) return { allowed: false, reason: 'Некорректный текст' };
     if (text.length > MAX_TEXT_LENGTH) return { allowed: false, reason: 'Текст слишком длинный' };
 
-    const maxRetries = 3;
     let attempt = 0;
 
-    while (attempt < maxRetries) {
+    while (attempt < MAX_RETRIES) {
       try {
         attempt++;
 
-        // Запрос к AI
+        // Подготовка запроса к AI
         const escaped = text.replace(/"/g, '\\"');
         const prompt = AI_PROMPT_TEMPLATE.replace('{TEXT}', escaped);
 
@@ -33,41 +40,45 @@ export const moderationService = {
         // Парсинг ответа
         const raw = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
 
-        let parsed: { allowed?: boolean; reason?: string };
+        let parsed: AIModerationResponse;
         try {
           parsed = JSON.parse(raw);
         } catch {
-          console.error(`❌ AI JSON parse error (try ${attempt}):`, raw);
-          // Если json битый, вряд ли повтор поможет, но можно попробовать или выйти.
-          // Обычно это не 503, так что fail open
+          console.error(`❌ Ошибка парсинга JSON от AI (попытка ${attempt}):`, raw);
+          // Fail open: разрешаем сообщение при ошибке парсинга
           return { allowed: true, reason: 'Ошибка парсинга' };
         }
 
+        // Проверка корректности ответа
         if (typeof parsed.allowed !== 'boolean') {
+          console.error(`❌ Некорректный формат ответа от AI:`, parsed);
           return { allowed: true, reason: 'Некорректный ответ' };
         }
 
         return { allowed: parsed.allowed, reason: parsed.reason || '' };
 
       } catch (error: any) {
-        // Проверяем на перегрузку (503)
+        // Проверка на перегрузку API (503)
         const isOverloaded =
           error?.status === 503 ||
           error?.error?.code === 503 ||
           (error?.message && error.message.includes('overloaded'));
 
-        if (isOverloaded && attempt < maxRetries) {
-          console.warn(`⚠️ AI Overloaded. Retrying (${attempt}/${maxRetries})...`);
-          await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s, 2s...
+        if (isOverloaded && attempt < MAX_RETRIES) {
+          const delay = RETRY_BASE_DELAY_MS * attempt;
+          console.warn(`⚠️ AI перегружен. Повторная попытка (${attempt}/${MAX_RETRIES}) через ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
           continue;
         }
 
-        console.error(`❌ Модерация (fail):`, error?.message || error);
-        // Fail open: разрешаем сообщение, чтобы не блокировать чат при сбое AI
+        console.error(`❌ Ошибка модерации:`, error?.message || error);
+        // Fail open: разрешаем сообщение при сбое AI, чтобы не блокировать чат
         return { allowed: true, reason: 'Ошибка проверки' };
       }
     }
 
+    // Если все попытки исчерпаны
+    console.error(`❌ Все попытки модерации исчерпаны (${MAX_RETRIES})`);
     return { allowed: true, reason: 'Ошибка проверки' };
   },
 };
