@@ -31,9 +31,13 @@ interface UserInfo {
   firstName?: string;
 }
 
+// === Константы ===
+const TRANSACTION_BATCH_LIMIT = 500; // Максимум транзакций для удаления за раз
+
+// === In-memory кэш пользователей ===
 const cache = new Map<string, UserBalance>();
 
-/** Helper safely converts Firestore Timestamp / Date / String to Date */
+/** Безопасно конвертирует Firestore Timestamp / Date / String в Date */
 const toDate = (val: any): Date => {
   if (!val) return new Date();
   if (typeof val.toDate === 'function') return val.toDate(); // Firestore Timestamp
@@ -61,24 +65,24 @@ const toBalance = (id: string, data: FirebaseFirestore.DocumentData): UserBalanc
 });
 
 export const userBalanceService = {
-  /** Загрузить все балансы при старте */
+  /** Загрузить все балансы пользователей при старте */
   async loadAllBalances(): Promise<void> {
     try {
       const snapshot = await db.collection('users').get();
       snapshot.forEach((doc) => cache.set(doc.id, toBalance(doc.id, doc.data())));
       console.log(`✅ Загружено ${cache.size} пользователей`);
     } catch (error) {
-      console.error('❌ Load error:', error);
+      console.error('❌ Ошибка загрузки пользователей:', error instanceof Error ? error.message : error);
     }
   },
 
-  /** Получить полный профиль */
+  /** Получить полный профиль пользователя */
   async getUserProfile(userId: string): Promise<UserBalance> {
-    // Try to ensure cache is populated first via getPaidBalance logic or similar
-    // But for simplicity, we'll try cache then DB directly
+    // Сначала проверяем кэш
     const cached = cache.get(userId);
     if (cached) return cached;
 
+    // Если нет в кэше - читаем из БД
     try {
       const doc = await db.collection('users').doc(userId).get();
       if (doc.exists) {
@@ -87,10 +91,10 @@ export const userBalanceService = {
         return balance;
       }
     } catch (error) {
-      console.error('❌ Get profile:', error);
+      console.error('❌ Ошибка получения профиля:', error instanceof Error ? error.message : error);
     }
 
-    // Return default if not found
+    // Возвращаем дефолтный профиль если пользователь не найден
     return {
       userId,
       paidMessages: 0,
@@ -111,7 +115,7 @@ export const userBalanceService = {
 
 
 
-  /** Добавить посты (атомарно с логированием) */
+  /** Добавить посты пользователю (атомарно с логированием транзакции) */
   async addPaidMessages(
     userId: string,
     count: number,
@@ -119,8 +123,8 @@ export const userBalanceService = {
     info?: UserInfo,
     invoiceId?: number
   ): Promise<void> {
-    if (!userId?.trim()) throw new Error('Invalid userId');
-    if (!Number.isInteger(count) || count <= 0) throw new Error('Invalid count');
+    if (!userId?.trim()) throw new Error('Некорректный userId');
+    if (!Number.isInteger(count) || count <= 0) throw new Error('Некорректное количество постов');
 
     const userRef = db.collection('users').doc(userId);
     const txRef = db.collection('transactions').doc();
@@ -139,7 +143,7 @@ export const userBalanceService = {
       if (source === 'stars') newStars += count;
       if (source === 'cryptobot') newCrypto += count;
 
-      // Update User
+      // Обновляем данные пользователя
       t.set(
         userRef,
         {
@@ -148,8 +152,7 @@ export const userBalanceService = {
           ...(info?.firstName && { firstName: info.firstName }),
 
           paidMessages: newBalance,
-          // Requirement: общее количество купленных постов за всех время которое суммирует 1 и 2 пункт
-          totalSpent: newStars + newCrypto,
+          totalSpent: newStars + newCrypto, // Общее количество купленных постов за все время
           totalPaidPosts: data.totalPaidPosts || 0,
           totalPayStars: newStars,
           totalPayCrypto: newCrypto,
@@ -159,7 +162,7 @@ export const userBalanceService = {
         { merge: true }
       );
 
-      // Log Transaction
+      // Логируем транзакцию
       const txData: Transaction = {
         userId,
         username: info?.username || data.username,
@@ -174,13 +177,13 @@ export const userBalanceService = {
       t.set(txRef, txData);
     });
 
-    // Sync cache
+    // Синхронизируем кэш
     const doc = await userRef.get();
     if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
-    console.log(`💰 User ${userId}: +${count} (Logged)`);
+    console.log(`💰 Пользователь ${userId}: +${count} постов (залогировано)`);
   },
 
-  /** Использовать 1 пост (атомарно с логированием) */
+  /** Использовать 1 платный пост (атомарно с логированием транзакции) */
   async usePaidMessage(userId: string, info?: UserInfo): Promise<{ success: boolean; remaining: number }> {
     const userRef = db.collection('users').doc(userId);
     const txRef = db.collection('transactions').doc();
@@ -189,15 +192,15 @@ export const userBalanceService = {
     try {
       await db.runTransaction(async (t) => {
         const doc = await t.get(userRef);
-        if (!doc.exists) throw new Error('User not found');
+        if (!doc.exists) throw new Error('Пользователь не найден');
 
         const data = doc.data()!;
-        if ((data.paidMessages || 0) <= 0) throw new Error('No balance');
+        if ((data.paidMessages || 0) <= 0) throw new Error('Нет баланса');
 
         const newBalance = data.paidMessages - 1;
         remaining = newBalance;
 
-        const updateData: any = {
+        const updateData: Partial<UserBalance> & { lastUpdate: Date } = {
           paidMessages: newBalance,
           totalPaidPosts: (data.totalPaidPosts || 0) + 1,
           lastPostDate: new Date(),
@@ -207,15 +210,13 @@ export const userBalanceService = {
         if (info?.username) updateData.username = info.username;
         if (info?.firstName) updateData.firstName = info.firstName;
 
-
         t.set(userRef, updateData, { merge: true });
 
-        // Log Transaction
+        // Логируем транзакцию
         const txData: Transaction = {
           userId,
           username: info?.username || data.username,
           firstName: info?.firstName || data.firstName,
-
           type: 'use',
           amount: 1,
           source: 'message',
@@ -225,15 +226,15 @@ export const userBalanceService = {
         t.set(txRef, txData);
       });
 
-      // Sync cache
+      // Синхронизируем кэш
       const doc = await userRef.get();
       if (doc.exists) cache.set(userId, toBalance(userId, doc.data()!));
-      console.log(`📤 User ${userId}: used 1 post (Logged)`);
+      console.log(`📤 Пользователь ${userId}: использован 1 пост (залогировано)`);
 
       return { success: true, remaining };
     } catch (error) {
-      if (error instanceof Error && error.message === 'No balance') return { success: false, remaining: 0 };
-      console.error('❌ Use post:', error);
+      if (error instanceof Error && error.message === 'Нет баланса') return { success: false, remaining: 0 };
+      console.error('❌ Ошибка использования поста:', error instanceof Error ? error.message : error);
       return { success: false, remaining: 0 };
     }
   },
@@ -247,29 +248,27 @@ export const userBalanceService = {
     // 1. Проверяем кэш (если не forceCheck)
     if (!forceCheck && cache.has(userId)) {
       const cached = cache.get(userId)!;
-      // Если данные изменились, обновляем (но в профиле это НЕ меняет lastPostDate)
+      // Если данные изменились, обновляем
       if (
         (info?.username && cached.username !== info.username) ||
         (info?.firstName && cached.firstName !== info.firstName)
       ) {
-        // Update cache immediately
+        // Обновляем кэш немедленно
         cached.username = info.username || cached.username;
         cached.firstName = info.firstName || cached.firstName;
-        // Background update to DB
-        const updateData: any = { lastUpdate: new Date() };
+
+        // Фоновое обновление в БД
+        const updateData: Partial<UserBalance> & { lastUpdate: Date } = { lastUpdate: new Date() };
         if (info.username !== undefined) updateData.username = info.username;
         if (info.firstName !== undefined) updateData.firstName = info.firstName;
 
         db.collection('users').doc(userId).set(updateData, { merge: true })
-          .catch(err => console.error('❌ Background update error:', err));
+          .catch(err => console.error('❌ Ошибка фонового обновления:', err instanceof Error ? err.message : err));
       }
       return;
     }
 
-    // Если forceCheck и юзер был в кэше, удалим временно, чтобы логика ниже отработала "честно"
-    // Но осторожно: если мы просто удалим, а в БД он есть, мы его не пересоздадим (см. ниже логику !doc.exists)
-    // Поэтому просто идем дальше к чтению из БД.
-
+    // При forceCheck читаем напрямую из БД
     const userRef = db.collection('users').doc(userId);
 
     try {
@@ -277,7 +276,7 @@ export const userBalanceService = {
         const doc = await t.get(userRef);
 
         if (!doc.exists) {
-          // Создаем нового
+          // Создаем нового пользователя
           const newUser: UserBalance = {
             userId,
             username: info?.username,
@@ -292,12 +291,10 @@ export const userBalanceService = {
             // lastPostDate НЕ ставим, чтобы в профиле было "—"
           };
 
-          // Remove undefined keys no longer needed because ignoreUndefinedProperties: true
-          // JSON.parse(JSON.stringify(newUser)) was causing Date to string conversion issue!
           t.set(userRef, newUser);
-          console.log(`👤 New User Created: ${userId}`);
+          console.log(`👤 Создан новый пользователь: ${userId}`);
         } else {
-          // Если существует (но нет в кэше) - добавляем в кэш + обновляем инфо
+          // Пользователь существует - обновляем информацию при необходимости
           const data = doc.data()!;
           if (
             (info?.username && data.username !== info.username) ||
@@ -312,39 +309,55 @@ export const userBalanceService = {
         }
       });
 
-      // Refresh cache
+      // Обновляем кэш
       const finalDoc = await userRef.get();
       if (finalDoc.exists) {
         cache.set(userId, toBalance(userId, finalDoc.data()!));
       }
 
     } catch (error) {
-      console.error('❌ ensureUser error:', error);
+      console.error('❌ Ошибка ensureUser:', error instanceof Error ? error.message : error);
     }
   },
 
   /** Удалить старые транзакции (старше N дней) */
   async deleteOldTransactions(days: number): Promise<void> {
     const limitDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let deletedTotal = 0;
 
     try {
-      const snapshot = await db
-        .collection('transactions')
-        .where('createdAt', '<', limitDate)
-        .limit(500) // Batch limit
-        .get();
+      let hasMore = true;
 
-      if (snapshot.empty) {
-        return;
+      // Удаляем батчами по TRANSACTION_BATCH_LIMIT записей до тех пор, пока есть старые транзакции
+      while (hasMore) {
+        const snapshot = await db
+          .collection('transactions')
+          .where('createdAt', '<', limitDate)
+          .limit(TRANSACTION_BATCH_LIMIT)
+          .get();
+
+        if (snapshot.empty) {
+          hasMore = false;
+          break;
+        }
+
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+
+        deletedTotal += snapshot.size;
+
+        // Если получили меньше записей, чем лимит - это была последняя порция
+        if (snapshot.size < TRANSACTION_BATCH_LIMIT) {
+          hasMore = false;
+        }
       }
 
-      const batch = db.batch();
-      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-      await batch.commit();
-
-      console.log(`🧹 Deleted ${snapshot.size} old transactions (> ${days} days)`);
+      if (deletedTotal > 0) {
+        console.log(`🧹 Удалено ${deletedTotal} старых транзакций (> ${days} дней)`);
+      }
     } catch (error) {
-      console.error('❌ Cleanup error:', error);
+      console.error('❌ Ошибка очистки транзакций:', error instanceof Error ? error.message : error);
     }
   },
 };
