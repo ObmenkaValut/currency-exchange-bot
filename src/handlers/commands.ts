@@ -66,7 +66,7 @@ export function registerCommands(bot: Bot) {
         `${MESSAGES.PROFILE.SECTION_ACTIVITY}\n` +
         `${MESSAGES.PROFILE.TOTAL_K(profile.totalPaidPosts)}\n` +
         `${MESSAGES.PROFILE.LAST_K(dateStr)}\n` +
-        `${MESSAGES.PROFILE.PS()}\n`
+        `${MESSAGES.PROFILE.PS}\n`
         ;
 
 
