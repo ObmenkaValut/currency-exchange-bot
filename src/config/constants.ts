@@ -7,7 +7,7 @@ export const BOT_USERNAME = 'currExchange_robot';
 export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 export const ADMIN_IDS: number[] = [300608298, 130552908, 5257577172]; // ID админов для доступа к /broadcast в привате
 
-// === Limits ===
+// === Лимиты ===
 export const MAX_POSTS_PER_PURCHASE = 100;
 export const FREE_DAILY_LIMIT = 30000000;
 export const MAX_LENGTH_FREE = 120;
@@ -25,24 +25,24 @@ export const AI_PROMPT_TEMPLATE = `Канал обмена валют/крипт
 
 export const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
-// === Timers ===
+// === Таймеры ===
 export const MAX_MESSAGE_AGE = 5 * 60; // 5 мин (сек)
 export const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 час (мс)
 export const INVOICE_TTL = 24 * 60 * 60 * 1000; // 24 часа (мс)
 
-// === Transactions ===
+// === Транзакции ===
 export const TRANSACTION_RETENTION_DAYS = 30; // 30 дней
 export const TRANSACTION_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // Проверять раз в 1 сутки
 
-// === Cache ===
+// === Кэш ===
 export const MAX_CACHE_SIZE = 10000;
 
-// === Scheduled Message ===
+// === Плановые сообщения ===
 export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 3; // Периодичность в часах
 export const TARGET_CHAT_ID = process.env.GROUP_ID; // ID чата, куда отправлять (ЗАМЕНИТЬ НА НУЖНЫЙ)
 export const SCHEDULED_MESSAGE_TEXT = '⚠️ *ВНИМАНИЕ. АДМИНИСТРАЦИЯ ЧАТА НЕ НЕСЕТ ОТВЕТСТВЕННОСТИ ЗА УЧАСТНИКОВ СДЕЛКИ.*';
 
-// === Helpers ===
+// === Вспомогательные функции ===
 export const getPostWord = (n: number): string => {
   if (n === 1) return 'пост';
   if (n < 5) return 'поста';
@@ -55,7 +55,7 @@ export const getPriceCrypto = (n: number): number => n / 100;
 export const formatPrice = (n: number): string =>
   `$${getPriceCrypto(n).toFixed(2)}`;
 
-// === Keyboard ===
+// === Клавиатуры ===
 export const BUTTONS = {
   BUY: 'Купить',
   PROFILE: 'Профиль',
@@ -63,7 +63,7 @@ export const BUTTONS = {
   ADMIN: 'Админ',
 };
 
-// 2x2 Grid Layout
+// Сетка 2x2
 export const MAIN_KEYBOARD = [
   [BUTTONS.BUY, BUTTONS.PROFILE],
   [BUTTONS.HELP, BUTTONS.ADMIN],
@@ -76,7 +76,7 @@ export const PAYMENT_KEYBOARD = {
   ],
 };
 
-// === Messages ===
+// === Сообщения ===
 export const MESSAGES = {
   // Общие
   ERRORS: {

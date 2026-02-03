@@ -1,13 +1,14 @@
 import admin from 'firebase-admin';
 
-const REQUIRED = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
-const missing = REQUIRED.filter((v) => !process.env[v]);
+const REQUIRED_ENV_VARS = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
 
-if (missing.length > 0) throw new Error(`❌ Missing: ${missing.join(', ')}`);
+if (missing.length > 0) throw new Error(`❌ Missing Firebase env vars: ${missing.join(', ')}`);
 
-// Parse private key
-let privateKey = process.env.FIREBASE_PRIVATE_KEY!;
-privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
+// Парсинг приватного ключа
+const privateKey = process.env.FIREBASE_PRIVATE_KEY!
+  .replace(/^"|"$/g, '')  // Убрать кавычки
+  .replace(/\\n/g, '\n');   // Заменить escaped \n
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -21,4 +22,5 @@ if (!admin.apps.length) {
 }
 
 export const db = admin.firestore();
+// Игнорировать undefined поля для совместимости с Firestore
 db.settings({ ignoreUndefinedProperties: true });
