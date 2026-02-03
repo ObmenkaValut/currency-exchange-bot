@@ -3,7 +3,8 @@ import admin from 'firebase-admin';
 const REQUIRED_ENV_VARS = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
 const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
 
-if (missing.length > 0) throw new Error(`❌ Missing Firebase env vars: ${missing.join(', ')}`);
+if (missing.length > 0) throw new Error(`❌ Отсутствуют переменные окружения Firebase: ${missing.join(', ')}`);
+
 
 // Парсинг приватного ключа
 const privateKey = process.env.FIREBASE_PRIVATE_KEY!
@@ -18,7 +19,7 @@ if (!admin.apps.length) {
       privateKey,
     }),
   });
-  console.log('✅ Firebase initialized');
+  console.log('✅ Firebase инициализирован');
 }
 
 export const db = admin.firestore();
