@@ -9,9 +9,10 @@ export const ADMIN_IDS: number[] = [300608298, 130552908, 5257577172]; // ID а�
 
 // === Лимиты ===
 export const MAX_POSTS_PER_PURCHASE = 100;
-export const FREE_DAILY_LIMIT = 30000000;
+export const FREE_DAILY_LIMIT = 3;
 export const MAX_LENGTH_FREE = 120;
 export const MAX_LENGTH_PAID = 360;
+export const MAX_LOG_MESSAGE_LENGTH = 3000; // Макс. длина текста нарушения в логе
 
 // === AI ===
 export const GEMINI_MODEL = 'gemini-2.5-flash-lite';
