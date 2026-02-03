@@ -29,6 +29,7 @@ export const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 export const MAX_MESSAGE_AGE = 5 * 60; // 5 мин (сек)
 export const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 час (мс)
 export const INVOICE_TTL = 24 * 60 * 60 * 1000; // 24 часа (мс)
+export const WELCOME_MESSAGE_TTL = 60 * 1000; // 60 сек (мс) - автоудаление приветствия
 
 // === Транзакции ===
 export const TRANSACTION_RETENTION_DAYS = 30; // 30 дней
