@@ -9,8 +9,6 @@ const mainKeyboard = {
   is_persistent: true,
 };
 
-// Main keyboard defined elsewhere or above
-
 export function registerCommands(bot: Bot) {
   // /start
   bot.command('start', async (ctx: Context) => {
@@ -18,7 +16,7 @@ export function registerCommands(bot: Bot) {
     if (ctx.chat?.type !== 'private') return;
 
     try {
-      // Create user if not exists or update info
+      // Создать юзера если не существует или обновить инфо
       await userBalanceService.ensureUser(ctx.from?.id.toString()!, {
         username: ctx.from?.username,
         firstName: ctx.from?.first_name
@@ -26,7 +24,7 @@ export function registerCommands(bot: Bot) {
 
       await ctx.reply(MESSAGES.START, { reply_markup: mainKeyboard });
     } catch (error) {
-      console.error('❌ /start:', error);
+      console.error('❌ /start:', error instanceof Error ? error.message : error);
       await ctx.reply(MESSAGES.ERRORS.GENERIC);
     }
   });
@@ -36,7 +34,7 @@ export function registerCommands(bot: Bot) {
     try {
       await ctx.reply(MESSAGES.HELP);
     } catch (error) {
-      console.error('❌ Справка:', error);
+      console.error('❌ Справка:', error instanceof Error ? error.message : error);
     }
   });
 
@@ -49,7 +47,7 @@ export function registerCommands(bot: Bot) {
       const free = limiterService.getCount(userId.toString());
       const profile = await userBalanceService.getUserProfile(userId.toString());
 
-      // Format: 14:20 | 29.01
+      // Формат: 14:20 | 29.01
       let dateStr = '—';
       if (profile.lastPostDate) {
         const d = profile.lastPostDate;
@@ -66,13 +64,10 @@ export function registerCommands(bot: Bot) {
         `${MESSAGES.PROFILE.SECTION_ACTIVITY}\n` +
         `${MESSAGES.PROFILE.TOTAL_K(profile.totalPaidPosts)}\n` +
         `${MESSAGES.PROFILE.LAST_K(dateStr)}\n` +
-        `${MESSAGES.PROFILE.PS}\n`
-        ;
-
-
+        `${MESSAGES.PROFILE.PS}\n`;
       await ctx.reply(msg, { parse_mode: 'Markdown' });
     } catch (error) {
-      console.error('❌ Профиль:', error);
+      console.error('❌ Профиль:', error instanceof Error ? error.message : error);
       await ctx.reply(MESSAGES.PROFILE.ERROR);
     }
   });
@@ -80,10 +75,10 @@ export function registerCommands(bot: Bot) {
   // Админ
   bot.hears(BUTTONS.ADMIN, async (ctx: Context) => {
     try {
-      // @ts-ignore - explicitly disable parsing to avoid errors with underscores
+      // @ts-ignore - отключаем парсинг чтобы избежать ошибок с подчеркиваниями
       await ctx.reply(MESSAGES.ADMIN_CONTACT, { parse_mode: undefined });
     } catch (error) {
-      console.error('❌ Админ:', error);
+      console.error('❌ Админ:', error instanceof Error ? error.message : error);
     }
   });
 
@@ -93,7 +88,7 @@ export function registerCommands(bot: Bot) {
       if (!ctx.from?.id) return;
       await ctx.reply(MESSAGES.PAYMENT.SELECT_METHOD, { reply_markup: PAYMENT_KEYBOARD });
     } catch (error) {
-      console.error('❌ Купить:', error);
+      console.error('❌ Купить:', error instanceof Error ? error.message : error);
       await ctx.reply(MESSAGES.ERRORS.GENERIC);
     }
   });
@@ -115,25 +110,37 @@ export function registerCommands(bot: Bot) {
       }
 
       const args = ctx.message?.text?.split(' ');
-      const targetId = args?.[1] || userId.toString();
+      const targetIdStr = args?.[1];
+
+      // Валидация: если указан ID, проверяем что это число
+      if (targetIdStr && !/^\d+$/.test(targetIdStr)) {
+        await ctx.reply('❌ Неверный формат ID. Используй: /reset или /reset USER_ID');
+        return;
+      }
+
+      const targetId = targetIdStr || userId.toString();
 
       limiterService.reset(targetId);
       await ctx.reply(targetId === userId.toString() ? MESSAGES.RESET_SUCCESS_ME : MESSAGES.RESET_SUCCESS_OTHER(targetId));
       console.log(`🔄 Админ ${userId} → reset ${targetId}`);
     } catch (error) {
-      console.error('❌ Reset:', error);
+      console.error('❌ Сброс лимитов:', error instanceof Error ? error.message : error);
       await ctx.reply(MESSAGES.ERRORS.IN_GROUP_ONLY);
     }
   });
 
-  // /getMyID
+  // Получить айди с помощью команды
   bot.command('getmyid', async (ctx: Context) => {
     // Только в ЛС
     if (ctx.chat?.type !== 'private') return;
 
-    const userId = ctx.from?.id;
-    if (userId) {
-      await ctx.reply(`Твой ID: \`${userId}\``, { parse_mode: 'Markdown' });
+    try {
+      const userId = ctx.from?.id;
+      if (userId) {
+        await ctx.reply(`Твой ID: \`${userId}\``, { parse_mode: 'Markdown' });
+      }
+    } catch (error) {
+      console.error('❌ getmyid:', error instanceof Error ? error.message : error);
     }
   });
 }

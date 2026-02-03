@@ -33,7 +33,6 @@ const isAdmin = async (ctx: Context): Promise<boolean> => {
 const resetState = (userId: number) => adminStates.set(userId, { step: 'IDLE' });
 
 // === Логика рассылки ===
-
 /**
  * Рассылает сообщение пользователям из базы.
  * @param ctx Контекст для копирования сообщения
@@ -54,7 +53,7 @@ async function performBroadcast(
             await ctx.api.copyMessage(adminId, sourceChatId, sourceMsgId, { disable_notification: true });
             await ctx.reply(MESSAGES.BROADCAST.TEST_SUCCESS);
         } catch (error) {
-            await ctx.reply(MESSAGES.BROADCAST.TEST_FAIL(error));
+            await ctx.reply(MESSAGES.BROADCAST.TEST_FAIL(error instanceof Error ? error.message : String(error)));
         }
         return;
     }
@@ -91,13 +90,12 @@ async function performBroadcast(
         await ctx.reply(MESSAGES.BROADCAST.SUMMARY(total, success, fail));
 
     } catch (error) {
-        console.error('Ошибка рассылки:', error);
+        console.error('Ошибка рассылки:', error instanceof Error ? error.message : error);
         await ctx.reply(MESSAGES.BROADCAST.ERROR_CRITICAL);
     }
 }
 
 // === Обработчики ===
-
 export function registerBroadcast(bot: Bot) {
 
     // Команды старта
@@ -176,7 +174,7 @@ export function registerBroadcast(bot: Bot) {
                 } else {
                     // Запускаем в фоне для массовой рассылки, чтобы не блочить ответ
                     performBroadcast(ctx, chatId, messageId, false).catch(e => {
-                        console.error('Ошибка фоновой рассылки:', e);
+                        console.error('Ошибка фоновой рассылки:', e instanceof Error ? e.message : e);
                     });
                 }
             } else if (text && MESSAGES.BROADCAST.BTN_NO.includes(text)) {

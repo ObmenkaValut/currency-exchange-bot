@@ -12,14 +12,19 @@ const privateKey = process.env.FIREBASE_PRIVATE_KEY!
   .replace(/\\n/g, '\n');   // Заменить escaped \n
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID!,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
-      privateKey,
-    }),
-  });
-  console.log('✅ Firebase инициализирован');
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID!,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+        privateKey,
+      }),
+    });
+    console.log('✅ Firebase инициализирован');
+  } catch (error) {
+    console.error('❌ Ошибка инициализации Firebase:', error instanceof Error ? error.message : error);
+    throw new Error('Не удалось инициализировать Firebase');
+  }
 }
 
 export const db = admin.firestore();
