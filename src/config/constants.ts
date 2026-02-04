@@ -10,7 +10,7 @@ export const ALLOWED_GROUP_IDS: number[] = [-1003735325551, -1001513641809, -100
 
 // === Лимиты ===
 export const MAX_POSTS_PER_PURCHASE = 100;
-export const FREE_DAILY_LIMIT = 3;
+export const FREE_DAILY_LIMIT = 2;
 export const MAX_LENGTH_FREE = 120;
 export const MAX_LENGTH_PAID = 360;
 export const MAX_LOG_MESSAGE_LENGTH = 3000; // Макс. длина текста нарушения в логе
@@ -142,6 +142,7 @@ export const MESSAGES = {
 📈 *Объем:* ${MAX_LENGTH_PAID} символов (вместо ${MAX_LENGTH_FREE}).
 😱️ *Эмодзи:* без запретов. 
 🔗 *Ссылки:* разрешены любые.
+🔢 *Количество*: без ограничений.
 
 Нажми кнопку "Купить", чтобы посмотреть цены ↓`,
 
