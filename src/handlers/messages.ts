@@ -14,7 +14,8 @@ import {
   MAX_LOG_MESSAGE_LENGTH,
 } from '../config/constants';
 
-const emojiPattern = emojiRegex();
+// Хелпер: проверка наличия эмодзи (без stateful regex)
+const hasEmoji = (text: string): boolean => emojiRegex().test(text);
 
 // Хелпер: экранирование спецсимволов Markdown
 const escapeMarkdown = (text: string) => text.replace(/([_*\[`])/g, '\\$1');
@@ -76,7 +77,7 @@ export async function handleGroupMessage(ctx: Context) {
     }
 
     // 6. Эмодзи (free only)
-    if (!isPaid && emojiPattern.test(text)) {
+    if (!isPaid && hasEmoji(text)) {
       await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.EMOJI(botLink)}`);
       console.log(`🚫 Эмодзи от ${userId}`);
       return;
