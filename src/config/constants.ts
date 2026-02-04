@@ -10,7 +10,7 @@ export const ALLOWED_GROUP_IDS: number[] = [-1003735325551, -1001513641809, -100
 
 // === Лимиты ===
 export const MAX_POSTS_PER_PURCHASE = 100;
-export const FREE_DAILY_LIMIT = 300000;
+export const FREE_DAILY_LIMIT = 3;
 export const MAX_LENGTH_FREE = 120;
 export const MAX_LENGTH_PAID = 360;
 export const MAX_LOG_MESSAGE_LENGTH = 3000; // Макс. длина текста нарушения в логе
@@ -46,7 +46,7 @@ export const MAX_CACHE_SIZE = 10000;
 
 // === Плановые сообщения ===
 export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 3; // Периодичность в часах
-export const TARGET_CHAT_ID = process.env.GROUP_ID; // ID чата, куда отправлять.
+export const TARGET_CHAT_ID = process.env.TARGET_GROUP_ID; // ID чата, куда отправлять.
 export const SCHEDULED_MESSAGE_TEXT = '⚠️ *ВНИМАНИЕ. АДМИНИСТРАЦИЯ ЧАТА НЕ НЕСЕТ ОТВЕТСТВЕННОСТИ ЗА УЧАСТНИКОВ СДЕЛКИ.*';
 
 // === Вспомогательные функции ===
@@ -56,8 +56,36 @@ export const getPostWord = (n: number): string => {
   return 'постов';
 };
 
-export const getPriceStars = (n: number): number => n;
-export const getPriceCrypto = (n: number): number => n / 100;
+// === Таблицы цен (редактируй здесь для изменения цен) ===
+// Telegram Stars: количество постов -> цена в Stars
+export const PRICE_TABLE_STARS: Record<number, number> = {
+  1: 10,
+  3: 30,
+  5: 50,
+  10: 90,
+  20: 170,
+  30: 240,
+  50: 325,
+  100: 500,
+};
+
+// Crypto (USD): количество постов -> цена в долларах
+export const PRICE_TABLE_CRYPTO: Record<number, number> = {
+  1: 0.20,
+  3: 0.60,
+  5: 1.00,
+  10: 1.80,
+  20: 3.40,
+  30: 4.80,
+  50: 6.50,
+  100: 10.00,
+};
+
+// Получить цену в Stars (с fallback на 1 пост)
+export const getPriceStars = (n: number): number => PRICE_TABLE_STARS[n] ?? PRICE_TABLE_STARS[1];
+
+// Получить цену в долларах (с fallback на 1 пост)
+export const getPriceCrypto = (n: number): number => PRICE_TABLE_CRYPTO[n] ?? PRICE_TABLE_CRYPTO[1];
 
 export const formatPrice = (n: number): string =>
   `$${getPriceCrypto(n).toFixed(2)}`;
@@ -130,7 +158,7 @@ export const MESSAGES = {
 
     SECTION_ACTIVITY: '\n*АКТИВНОСТЬ:*',
     TOTAL_K: (n: number) => `📊 Всего опубликовано: ${n}`,
-    LAST_K: (dateStr: string) => `🕔 Последний: ${dateStr}`,
+    LAST_K: (dateStr: string) => `🕔 Последний: ${dateStr} UTC`,
 
     PS: '\n*P.S.* _Бесплатные посты обновляются в 00:00 UTC._',
     ERROR: '❌ Ошибка получения профиля',

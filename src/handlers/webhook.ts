@@ -79,10 +79,12 @@ const validatePaymentData = (
         return { valid: false, error: 'Некорректное количество', status: 400 };
     }
 
-    // Проверка суммы
-    const expected = getPriceCrypto(count).toFixed(2);
-    if (amount !== expected) {
-        console.error(`❌ Несоответствие суммы: ожидалось ${expected}, получено ${amount} (user=${userId}, invoice=${invoiceId})`);
+    // Проверка суммы (сравниваем как числа, т.к. CryptoBot может вернуть "0.2" вместо "0.20")
+    const expectedAmount = getPriceCrypto(count);
+    const receivedAmount = parseFloat(amount);
+
+    if (isNaN(receivedAmount) || Math.abs(receivedAmount - expectedAmount) > 0.001) {
+        console.error(`❌ Несоответствие суммы: ожидалось ${expectedAmount.toFixed(2)}, получено ${amount} (user=${userId}, invoice=${invoiceId})`);
         return { valid: false, error: 'Несоответствие суммы', status: 400 };
     }
 

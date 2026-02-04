@@ -49,15 +49,15 @@ async function start() {
 
   // === Плановые сообщения (закомментировано) ===
   console.log(`⏰ Плановые сообщения: каждые ${SCHEDULED_MESSAGE_INTERVAL_HOURS}ч в чат ${TARGET_CHAT_ID}`);
-  // setInterval(async () => {
-  //   try {
-  //     if (!TARGET_CHAT_ID) return; // Пропускаем, если не настроено
-  //     const linkPreview = { is_disabled: true };
-  //     await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
-  //     console.log('✅ Плановое сообщение отправлено');
-  //   } catch (error) {
-  //     console.error('❌ Ошибка отправки планового сообщения:', error);
-  //   }\n  // }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
+  setInterval(async () => {
+    try {
+      if (!TARGET_CHAT_ID) return; // Пропускаем, если не настроено
+      const linkPreview = { is_disabled: true };
+      await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
+      console.log('✅ Плановое сообщение отправлено');
+    } catch (error) {
+      console.error('❌ Ошибка отправки планового сообщения:', error);
+    }}, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 

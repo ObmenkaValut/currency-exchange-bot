@@ -10,7 +10,7 @@ import {
 const SPAM_WINDOW_MS = 10 * 1000; // 10 секунд
 const SPAM_MESSAGE_THRESHOLD = 10; // Максимум сообщений в окне
 const SPAM_BAN_DURATION_MS = 3 * 60 * 1000; // Бан на 3 минуты
-const AI_MAX_REQUESTS_PER_WINDOW = 1; // 1 запрос к AI в окне
+const AI_MAX_REQUESTS_PER_WINDOW = 20; // 5 запросов к AI в минуту
 
 // === In-memory кэши ===
 const dailyLimits = new Map<string, UserLimit>();
@@ -72,8 +72,8 @@ export const limiterService = {
       return true;
     }
 
-    // ИСПРАВЛЕНИЕ: проверяем лимит запросов
-    if (limit.count >= AI_MAX_REQUESTS_PER_WINDOW) {
+    // Проверяем лимит запросов
+    if (limit.count > AI_MAX_REQUESTS_PER_WINDOW) {
       return false; // Превышен лимит
     }
 
