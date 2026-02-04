@@ -41,10 +41,6 @@ export const WELCOME_MESSAGE_TTL = 60 * 1000; // 60 сек (мс) - автоуд
 export const TRANSACTION_RETENTION_DAYS = 30; // 30 дней
 export const TRANSACTION_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // Проверять раз в 1 сутки
 
-// === Тестирование ===
-// Время сброса бесплатных постов (UTC, формат HH:mm). Пусто = стандартный режим (00:00)
-export const TEST_RESET_TIME_UTC = '06:30'; // TODO: Удалить после теста!
-
 // === Кэш ===
 export const MAX_CACHE_SIZE = 10000;
 

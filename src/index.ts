@@ -14,7 +14,7 @@ import { registerBroadcast } from './handlers/broadcast';
 import { createWebhookRouter } from './handlers/webhook';
 import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, ALLOWED_GROUP_IDS, TEST_RESET_TIME_UTC } from './config/constants';
+import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, ALLOWED_GROUP_IDS } from './config/constants';
 
 // === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -57,37 +57,7 @@ async function start() {
   //     console.log('✅ Плановое сообщение отправлено');
   //   } catch (error) {
   //     console.error('❌ Ошибка отправки планового сообщения:', error);
-  //   }
-  // }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
-
-  // === Тестовый сброс лимитов ===
-  if (TEST_RESET_TIME_UTC) {
-    const scheduleReset = () => {
-      const now = new Date();
-      const [hours, minutes] = TEST_RESET_TIME_UTC.split(':').map(Number);
-
-      // Создаем целевое время сегодня
-      const target = new Date();
-      target.setUTCHours(hours, minutes, 0, 0);
-
-      // Если время уже прошло сегодня, планируем на завтра
-      if (target <= now) {
-        target.setUTCDate(target.getUTCDate() + 1);
-      }
-
-      const msUntilReset = target.getTime() - now.getTime();
-      const minutesUntil = Math.floor(msUntilReset / 1000 / 60);
-
-      console.log(`⏰ Тестовый сброс запланирован на ${TEST_RESET_TIME_UTC} UTC (через ${minutesUntil} мин)`);
-
-      setTimeout(() => {
-        limiterService.resetAll();
-        scheduleReset(); // Планируем следующий сброс
-      }, msUntilReset);
-    };
-
-    scheduleReset();
-  }
+  //   }\n  // }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 

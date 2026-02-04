@@ -51,12 +51,6 @@ export const limiterService = {
     dailyLimits.delete(userId);
   },
 
-  resetAll(): void {
-    const count = dailyLimits.size;
-    dailyLimits.clear();
-    console.log(`🔄 Принудительный сброс всех лимитов: ${count} пользователей`);
-  },
-
   increment(userId: string): void {
     const today = getTodayDate();
     const limit = dailyLimits.get(userId);
