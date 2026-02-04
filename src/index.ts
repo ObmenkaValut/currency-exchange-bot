@@ -57,7 +57,8 @@ async function start() {
       console.log('✅ Плановое сообщение отправлено');
     } catch (error) {
       console.error('❌ Ошибка отправки планового сообщения:', error);
-    }}, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
+    }
+  }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 
