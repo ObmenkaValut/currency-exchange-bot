@@ -158,8 +158,8 @@ async function start() {
     .on('message:text')
     .filter((ctx) => ['supergroup', 'group'].includes(ctx.chat?.type || ''), handleGroupMessage);
 
-  // Обработка новых участников группы
-  bot.on('message:new_chat_members', handleNewMember);
+  // Обработка новых участников группы (работает и в супергруппах)
+  bot.on('chat_member', handleNewMember);
 
   // === Express сервер ===
   const app = express();
@@ -179,7 +179,10 @@ async function start() {
   // Настройка webhook для production
   if (IS_PROD && WEBHOOK_URL) {
     app.post('/telegram', webhookCallback(bot, 'express'));
-    await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, { drop_pending_updates: true });
+    await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, {
+      drop_pending_updates: true,
+      allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
+    });
     console.log(`📡 Webhook установлен: ${WEBHOOK_URL}/telegram`);
   }
 
