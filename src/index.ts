@@ -29,8 +29,18 @@ if (IS_PROD && WEBHOOK_URL && !WEBHOOK_URL.startsWith('https://')) {
   throw new Error('❌ WEBHOOK_URL должен начинаться с https://');
 }
 
+import { autoRetry } from '@grammyjs/auto-retry';
+
+// ... imports
+
 async function start() {
   console.log(`🚀 Запуск бота... Режим: ${IS_PROD ? 'WEBHOOK' : 'POLLING'}`);
+
+  // === Auto-Retry для обработки Rate Limits ===
+  bot.api.config.use(autoRetry({
+    maxRetryAttempts: 3,
+    maxDelaySeconds: 5,
+  }));
 
   // Загрузка всех балансов пользователей в кэш
   await userBalanceService.loadAllBalances();
