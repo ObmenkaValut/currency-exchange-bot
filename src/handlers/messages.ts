@@ -12,6 +12,7 @@ import {
   MESSAGES,
   LOG_CHANNEL_ID,
   MAX_LOG_MESSAGE_LENGTH,
+  ADMIN_IDS,
 } from '../config/constants';
 
 // Хелпер: проверка наличия эмодзи (без stateful regex)
@@ -49,9 +50,8 @@ export async function handleGroupMessage(ctx: Context) {
   const mention = getMention(ctx.from);
 
   try {
-    // 1. Админы без ограничений
-    const member = await ctx.getChatMember(userId);
-    if (['creator', 'administrator'].includes(member.status)) return;
+    // 1. Админы без ограничений (мгновенная проверка по массиву)
+    if (ADMIN_IDS.includes(userId)) return;
 
     // 2. Игнорируем ботов
     if (is_bot) return;
