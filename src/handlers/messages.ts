@@ -32,8 +32,15 @@ const getMention = (from: From): string => {
 
 // Хелпер: удалить сообщение юзера и отправить "одиночное" предупреждение
 const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: string) => {
-  await ctx.api.deleteMessage(chatId, msgId).catch(() => { });
+  const t1 = Date.now();
+  await ctx.api.deleteMessage(chatId, msgId).catch((err) => {
+    console.error(`❌ Ошибка удаления msgId=${msgId}:`, err.message);
+  });
+  console.log(`⏱️ deleteMessage: ${Date.now() - t1}ms`);
+
+  const t2 = Date.now();
   await sendWarning(ctx, text);
+  console.log(`⏱️ sendWarning: ${Date.now() - t2}ms`);
 };
 
 export async function handleGroupMessage(ctx: Context) {
@@ -57,13 +64,15 @@ export async function handleGroupMessage(ctx: Context) {
     if (is_bot) return;
 
     // 3. Проверка баланса
+    const t1 = Date.now();
     const paidBalance = await userBalanceService.getPaidBalance(userId.toString());
+    console.log(`⏱️ getPaidBalance: ${Date.now() - t1}ms`);
     const isPaid = paidBalance > 0;
     const maxLen = isPaid ? MAX_LENGTH_PAID : MAX_LENGTH_FREE;
 
     // 4. ЛИМИТ (free only) - проверяем ПЕРВЫМ, чтобы сообщение было корректным
     if (!isPaid && limiterService.getCount(userId.toString()) >= FREE_DAILY_LIMIT) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`);
+      deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`).catch(() => { });
       console.log(`🚫 Лимит ${userId}`);
       return;
     }
@@ -71,14 +80,14 @@ export async function handleGroupMessage(ctx: Context) {
     // 5. Длина
     if (text.length > maxLen) {
       const hint = isPaid ? '' : MESSAGES.WARNINGS.LENGTH_HINT_FREE(botLink);
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LENGTH(maxLen, hint)}`);
+      deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LENGTH(maxLen, hint)}`).catch(() => { });
       console.log(`🚫 Длина ${text.length}>${maxLen} от ${userId}`);
       return;
     }
 
     // 6. Эмодзи (free only)
     if (!isPaid && hasEmoji(text)) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.EMOJI(botLink)}`);
+      deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.EMOJI(botLink)}`).catch(() => { });
       console.log(`🚫 Эмодзи от ${userId}`);
       return;
     }
@@ -89,7 +98,7 @@ export async function handleGroupMessage(ctx: Context) {
     const hasTme = text.includes('t.me'); // Дополнительная проверка на t.me без http
 
     if (!isPaid && (hasLink || hasTme)) {
-      await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LINKS(botLink)}`);
+      deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LINKS(botLink)}`).catch(() => { });
       console.log(`🚫 Ссылка/Контакт от ${userId}`);
       return;
     }
@@ -98,7 +107,7 @@ export async function handleGroupMessage(ctx: Context) {
     if (!isPaid) {
       // 7. AI rate limit
       if (!limiterService.checkAiRateLimit(userId.toString())) {
-        await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_RATE}`);
+        deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_RATE}`).catch(() => { });
         console.log(`🚫 AI rate ${userId}`);
         return;
       }
@@ -108,7 +117,7 @@ export async function handleGroupMessage(ctx: Context) {
       if (!mod.allowed) {
         // Причину от AI то же нужно экранировать
         const safeReason = escapeMarkdown(mod.reason);
-        await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_MODERATION(safeReason)}`);
+        deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.AI_MODERATION(safeReason)}`).catch(() => { });
         console.log(`🚫 AI: ${mod.reason} от ${userId}`);
 
         // === LOGGING TO CHANNEL ===
