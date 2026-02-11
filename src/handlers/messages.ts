@@ -33,13 +33,16 @@ const getMention = (from: From): string => {
 // Хелпер: удалить сообщение юзера и отправить предупреждение
 const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: string) => {
   // КРИТИЧНО: Ждём удаления (с auto-retry если 429)
-  await ctx.api.deleteMessage(chatId, msgId).catch((err) => {
-    console.error(`❌ Ошибка удаления msgId=${msgId}:`, err.message);
-  });
+  try {
+    await ctx.api.deleteMessage(chatId, msgId);
+    console.log(`🗑️ Удалено: msgId=${msgId}, chat=${chatId}`);
+  } catch (err) {
+    console.error(`❌ НЕ УДАЛОСЬ удалить msgId=${msgId}, chat=${chatId}:`, err instanceof Error ? err.message : String(err));
+  }
 
   // НЕ КРИТИЧНО: Предупреждение отправляем в фоне
   sendWarning(ctx, text).catch((err) => {
-    console.error(`❌ sendWarning failed (chat=${chatId}, msgId=${msgId}):`, err instanceof Error ? err.message : err);
+    console.error(`❌ sendWarning failed (chat=${chatId}, msgId=${msgId}):`, err instanceof Error ? err.message : String(err));
   });
 };
 
