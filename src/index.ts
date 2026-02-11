@@ -94,6 +94,10 @@ async function start() {
 
   // === Middleware ===
 
+  // Логирование ПЕРВЫМ — чтобы видеть ВСЕ update'ы без исключений
+  bot.use(loggerMiddleware);
+  bot.catch((err) => errorHandler(err, err.ctx));
+
   // === Whitelist групп ===
   bot.use(async (ctx, next) => {
     const chatId = ctx.chat?.id;
@@ -128,6 +132,7 @@ async function start() {
       if (spamCheck.isBanned) {
         // Вычисляем оставшееся время бана (в минутах, округляем вверх)
         const minutesLeft = Math.ceil((spamCheck.banExpiresAt! - Date.now()) / 1000 / 60);
+        console.log(`⛔ Спам-бан: userId=${ctx.from.id}, осталось ${minutesLeft} мин`);
 
         // Уведомляем пользователя о бане
         await ctx.reply(MESSAGES.WARNINGS.SPAM_BAN(minutesLeft));
@@ -147,16 +152,12 @@ async function start() {
     if (ctx.message?.date) {
       const age = Date.now() / 1000 - ctx.message.date;
       if (age > MAX_MESSAGE_AGE) {
-        console.log(`⏭️ Пропущено старое сообщение (${Math.floor(age / 60)} мин)`);
+        console.log(`⏭️ Пропущено старое сообщение (возраст: ${Math.floor(age)}с, от userId=${ctx.from?.id})`);
         return;
       }
     }
     return next();
   });
-
-  // Логирование и обработка ошибок
-  bot.use(loggerMiddleware);
-  bot.catch((err) => errorHandler(err, err.ctx));
 
   // === Регистрация обработчиков ===
   registerCommands(bot);
@@ -188,7 +189,15 @@ async function start() {
 
   // Настройка webhook для production
   if (IS_PROD && WEBHOOK_URL) {
-    app.post('/telegram', webhookCallback(bot, 'express'));
+    const wh = webhookCallback(bot, 'express');
+    app.post('/telegram', (req, res) => {
+      const updateId = req.body?.update_id;
+      const fromId = req.body?.message?.from?.id || req.body?.callback_query?.from?.id || '?';
+      const chatType = req.body?.message?.chat?.type || '?';
+      console.log(`📥 Webhook received: update_id=${updateId}, from=${fromId}, chat=${chatType}`);
+      // @ts-ignore
+      wh(req, res);
+    });
     await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, {
       drop_pending_updates: true,
       allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
