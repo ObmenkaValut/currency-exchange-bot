@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
-import { webhookCallback, session } from 'grammy';
+import { session } from 'grammy';
 import { bot } from './bot';
 import { userBalanceService } from './services/premium';
 import { limiterService } from './services/limiter';
@@ -38,8 +38,8 @@ async function start() {
 
   // === Auto-Retry для обработки Rate Limits ===
   bot.api.config.use(autoRetry({
-    maxRetryAttempts: 3,
-    maxDelaySeconds: 5,
+    maxRetryAttempts: 1,   // Максимум 1 повтор, чтобы не блокировать webhook
+    maxDelaySeconds: 2,    // Макс 2сек ожидания (вместо 5с)
   }));
 
   // Загрузка всех балансов пользователей в кэш
@@ -189,15 +189,15 @@ async function start() {
 
   // Настройка webhook для production
   if (IS_PROD && WEBHOOK_URL) {
-    const wh = webhookCallback(bot, 'express');
+    // Неблокирующий webhook: отвечаем 200 OK сразу, обрабатываем в фоне.
+    // Это предотвращает таймауты webhookCallback (10с) и не блокирует Telegram.
     app.post('/telegram', (req, res) => {
-      const updateId = req.body?.update_id;
-      const fromId = req.body?.message?.from?.id || req.body?.callback_query?.from?.id || '?';
-      const chatType = req.body?.message?.chat?.type || '?';
-      console.log(`📥 Webhook received: update_id=${updateId}, from=${fromId}, chat=${chatType}`);
-      // @ts-ignore
-      wh(req, res);
+      res.sendStatus(200);
+      bot.handleUpdate(req.body).catch((err) => {
+        console.error('❌ Ошибка обработки update:', err instanceof Error ? err.message : err);
+      });
     });
+
     await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, {
       drop_pending_updates: true,
       allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],

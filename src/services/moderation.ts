@@ -12,9 +12,10 @@ interface AIModerationResponse {
 }
 
 // === Константы ===
-const MAX_TEXT_LENGTH = 4000; // Максимальная длина текста для модерации
-const MAX_RETRIES = 3; // Количество попыток при ошибках API
-const RETRY_BASE_DELAY_MS = 1000; // Базовая задержка для retry (1s, 2s, 3s...)
+const MAX_TEXT_LENGTH = 4000;      // Максимальная длина текста для модерации
+const MAX_RETRIES = 2;             // Количество попыток при ошибках API
+const RETRY_BASE_DELAY_MS = 500;   // Базовая задержка для retry (500мс, 1с)
+const AI_TIMEOUT_MS = 5000;        // Таймаут запроса к Gemini (5сек)
 
 export const moderationService = {
   async moderateText(text: string): Promise<ModerationResult> {
@@ -35,6 +36,10 @@ export const moderationService = {
         const response = await genAI.models.generateContent({
           model: GEMINI_MODEL,
           contents: prompt,
+          config: {
+            // @ts-ignore — AbortSignal.timeout поддерживается в Node 18+
+            abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+          },
         });
 
         // Парсинг ответа
