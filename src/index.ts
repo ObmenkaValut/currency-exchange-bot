@@ -189,6 +189,10 @@ async function start() {
 
   // Настройка webhook для production
   if (IS_PROD && WEBHOOK_URL) {
+    // Инициализация бота (получение botInfo от Telegram)
+    // Нужно вызвать до handleUpdate, т.к. webhookCallback делал это автоматически
+    await bot.init();
+
     // Неблокирующий webhook: отвечаем 200 OK сразу, обрабатываем в фоне.
     // Это предотвращает таймауты webhookCallback (10с) и не блокирует Telegram.
     app.post('/telegram', (req, res) => {
