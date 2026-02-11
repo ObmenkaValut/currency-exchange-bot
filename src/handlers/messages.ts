@@ -30,8 +30,7 @@ const getMention = (from: From): string => {
   return `[${name}](tg://user?id=${from.id})`;
 };
 
-// Хелпер: удалить сообщение юзера и отправить "одиночное" предупреждение
-// Хелпер: удалить сообщение юзера и отправить "одиночное" предупреждение
+// Хелпер: удалить сообщение юзера и отправить предупреждение
 const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: string) => {
   // КРИТИЧНО: Ждём удаления (с auto-retry если 429)
   await ctx.api.deleteMessage(chatId, msgId).catch((err) => {
@@ -39,12 +38,20 @@ const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: 
   });
 
   // НЕ КРИТИЧНО: Предупреждение отправляем в фоне
-  sendWarning(ctx, text).catch(() => { });
+  sendWarning(ctx, text).catch((err) => {
+    console.error(`❌ sendWarning failed (chat=${chatId}):`, err instanceof Error ? err.message : err);
+  });
 };
 
 export async function handleGroupMessage(ctx: Context) {
-  if (!ctx.chat || ctx.chat.type === 'private') return;
-  if (!ctx.message?.text || !ctx.from) return;
+  if (!ctx.chat || ctx.chat.type === 'private') {
+    console.log(`⏭️ handleGroupMessage: пропуск (private/no chat)`);
+    return;
+  }
+  if (!ctx.message?.text || !ctx.from) {
+    console.log(`⏭️ handleGroupMessage: пропуск (нет текста или from), chat=${ctx.chat.id}`);
+    return;
+  }
 
   // Игнорируем лог-канал (бот там только отправляет, не обрабатывает)
   if (ctx.chat.id === LOG_CHANNEL_ID) return;
@@ -55,12 +62,20 @@ export async function handleGroupMessage(ctx: Context) {
   const text = ctx.message.text;
   const mention = getMention(ctx.from);
 
+  console.log(`🔍 handleGroupMessage: userId=${userId}, msgId=${msgId}, len=${text.length}`);
+
   try {
     // 1. Админы без ограничений (мгновенная проверка по массиву)
-    if (ADMIN_IDS.includes(userId)) return;
+    if (ADMIN_IDS.includes(userId)) {
+      console.log(`👑 Админ ${userId}, пропускаем`);
+      return;
+    }
 
     // 2. Игнорируем ботов
-    if (is_bot) return;
+    if (is_bot) {
+      console.log(`🤖 Бот ${userId}, пропускаем`);
+      return;
+    }
 
     // 3. Проверка баланса
     const t1 = Date.now();
