@@ -123,6 +123,11 @@ async function start() {
     return next();
   });
 
+  // Логирование update'ов которые НЕ попали ни в один handler
+  // Если update прошёл через ВСЮ цепочку middleware, но ни один handler не обработал,
+  // grammY просто вызывает next() и update пропадает молча.
+  // Этот middleware должен быть ПОСЛЕДНИМ (после регистрации handler'ов).
+
   // === Антиспам защита (только для личных сообщений) ===
   bot.use(async (ctx, next) => {
     // Проверяем только в личных чатах
@@ -169,6 +174,15 @@ async function start() {
     .on('message:text')
     .filter((ctx) => ['supergroup', 'group'].includes(ctx.chat?.type || ''), handleGroupMessage);
 
+  // Fallback: ловим ВСЕ сообщения, которые НЕ попали в handler выше
+  bot.on('message', (ctx) => {
+    const who = ctx.from?.first_name || '?';
+    const uid = ctx.from?.id || '?';
+    const chatType = ctx.chat?.type || '?';
+    const hasText = !!ctx.message?.text;
+    console.log(`⚠️ Необработанное сообщение: ${who} [${uid}], chat=${chatType}, hasText=${hasText}, keys=${Object.keys(ctx.message || {}).join(',')}`);
+  });
+
   // Обработка новых участников группы (работает и в супергруппах)
   bot.on('chat_member', handleNewMember);
 
@@ -197,8 +211,23 @@ async function start() {
     // Это предотвращает таймауты webhookCallback (10с) и не блокирует Telegram.
     app.post('/telegram', (req, res) => {
       res.sendStatus(200);
+
+      // Лог НА УРОВНЕ EXPRESS — до grammY, до middleware, до всего
+      const upd = req.body;
+      const updId = upd?.update_id;
+      const msg = upd?.message;
+      if (msg) {
+        const who = msg.from?.first_name || msg.sender_chat?.title || '?';
+        const uid = msg.from?.id || msg.sender_chat?.id || '?';
+        console.log(`📥 [${updId}] Express: ${who} [${uid}], msgId=${msg.message_id}, hasText=${!!msg.text}`);
+      } else {
+        // callback_query, chat_member, и прочие non-message update'ы
+        const type = Object.keys(upd || {}).filter((k: string) => k !== 'update_id')[0] || '?';
+        console.log(`📥 [${updId}] Express: type=${type}`);
+      }
+
       bot.handleUpdate(req.body).catch((err) => {
-        console.error('❌ Ошибка обработки update:', err instanceof Error ? err.message : err);
+        console.error(`❌ [${updId}] handleUpdate error:`, err instanceof Error ? err.message : err);
       });
     });
 
