@@ -36,7 +36,7 @@ export const MAX_MESSAGE_AGE = 5 * 60; // 5 мин (сек)
 export const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 час (мс)
 export const INVOICE_TTL = 24 * 60 * 60 * 1000; // 24 часа (мс)
 export const WELCOME_MESSAGE_TTL = 60 * 1000; // 60 сек (мс) - автоудаление приветствия
-export const WARNING_EDIT_WINDOW = 10 * 1000; // 10 сек (мс) - окно для редактирования предупреждения вместо пересоздания
+export const WARNING_EDIT_WINDOW = 30 * 1000; // 10 сек (мс) - окно для редактирования предупреждения вместо пересоздания
 export const WARNING_DELETE_DELAY = 3 * 1000; // 3 сек (мс) - задержка удаления старого предупреждения
 
 // === Транзакции ===
