@@ -173,7 +173,7 @@ export const MESSAGES = {
     LENGTH_HINT_FREE: (link: string) => `\n\n*Увеличь объем до ${MAX_LENGTH_PAID} символов.*\nПереходи → ${link}`,
     EMOJI: (link: string) => `, эмодзи запрещены 🚫\n\n*Сделай сообщение заметным.*\nРазблокируй эмодзи в боте.\nПереходи → ${link}`,
     LINKS: (link: string) => `, ссылки запрещены 🚫\n\n*Не теряй клиентов.*\nРазблокируй доступ в боте.\nПереходи → ${link}`,
-    LIMIT: (link: string) => `, бесплатные посты всё.\n📝 Лимит: ${FREE_DAILY_LIMIT}шт./день.\n\n*Хочешь больше?*\nПереходи → ${link}`,
+    LIMIT: (link: string) => `, бесплатные посты всё.\n📝 Лимит: ${FREE_DAILY_LIMIT}шт/день.\n\n*Хочешь больше?*\nПереходи → ${link}`,
     SPAM_BAN: (min: number) => `⛔️ Ты заблокирован на 3 минуты за спам.\nОсталось: ${min} мин.`,
     AI_RATE: ', ты пишешь слишком часто, подожди минуту 🕐',
     AI_MODERATION: (reason: string) => `, сообщение удалено 🚫\nПричина: ${reason}`,
