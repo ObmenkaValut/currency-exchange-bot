@@ -18,16 +18,11 @@ import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERV
 
 // === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const IS_PROD = process.env.NODE_ENV === 'production';
 const CRYPTO_TOKEN = process.env.CRYPTO_BOT_TOKEN || '';
 
 // === Валидация переменных окружения ===
 if (!CRYPTO_TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не установлен');
-if (IS_PROD && !WEBHOOK_URL) throw new Error('❌ WEBHOOK_URL обязателен для production режима');
-if (IS_PROD && WEBHOOK_URL && !WEBHOOK_URL.startsWith('https://')) {
-  throw new Error('❌ WEBHOOK_URL должен начинаться с https://');
-}
 
 import { autoRetry } from '@grammyjs/auto-retry';
 
@@ -201,53 +196,18 @@ async function start() {
   app.use('/webhook', createWebhookRouter(CRYPTO_TOKEN));
   app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
-  // Настройка webhook для production
-  if (IS_PROD && WEBHOOK_URL) {
-    // Инициализация бота (получение botInfo от Telegram)
-    // Нужно вызвать до handleUpdate, т.к. webhookCallback делал это автоматически
-    await bot.init();
-
-    // Неблокирующий webhook: отвечаем 200 OK сразу, обрабатываем в фоне.
-    // Это предотвращает таймауты webhookCallback (10с) и не блокирует Telegram.
-    app.post('/telegram', (req, res) => {
-      res.sendStatus(200);
-
-      // Лог НА УРОВНЕ EXPRESS — до grammY, до middleware, до всего
-      const upd = req.body;
-      const updId = upd?.update_id;
-      const msg = upd?.message;
-      if (msg) {
-        const who = msg.from?.first_name || msg.sender_chat?.title || '?';
-        const uid = msg.from?.id || msg.sender_chat?.id || '?';
-        console.log(`📥 [${updId}] Express: ${who} [${uid}], msgId=${msg.message_id}, hasText=${!!msg.text}`);
-      } else {
-        // callback_query, chat_member, и прочие non-message update'ы
-        const type = Object.keys(upd || {}).filter((k: string) => k !== 'update_id')[0] || '?';
-        console.log(`📥 [${updId}] Express: type=${type}`);
-      }
-
-      bot.handleUpdate(req.body).catch((err) => {
-        console.error(`❌ [${updId}] handleUpdate error:`, err instanceof Error ? err.message : err);
-      });
-    });
-
-    await bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, {
-      drop_pending_updates: true,
-      allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
-    });
-    console.log(`📡 Webhook установлен: ${WEBHOOK_URL}/telegram`);
-  }
-
-  // Запуск сервера
+  // Запуск Express сервера (нужен для CryptoBot webhook и health check)
   app.listen(PORT, async () => {
     console.log(`🌐 Express сервер запущен на порту ${PORT}`);
+  });
 
-    // Для development режима используем polling
-    if (!IS_PROD) {
-      await bot.api.deleteWebhook({ drop_pending_updates: true });
-      await bot.start();
-      console.log('🔄 Режим polling активирован');
-    }
+  // === Long Polling — надёжный приём update'ов ===
+  // Бот сам запрашивает update'ы у Telegram, ничего не теряется.
+  await bot.api.deleteWebhook({ drop_pending_updates: true });
+  console.log('📡 Webhook удалён, переходим на long polling...');
+  bot.start({
+    allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
+    onStart: () => console.log('🔄 Long polling активирован. Бот получает update\'ы напрямую от Telegram.'),
   });
 
   console.log('✅ Бот успешно запущен!');
