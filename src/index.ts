@@ -18,7 +18,6 @@ import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERV
 
 // === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const IS_PROD = process.env.NODE_ENV === 'production';
 const CRYPTO_TOKEN = process.env.CRYPTO_BOT_TOKEN || '';
 
 // === Валидация переменных окружения ===
@@ -26,15 +25,14 @@ if (!CRYPTO_TOKEN) console.warn('⚠️ CRYPTO_BOT_TOKEN не установле
 
 import { autoRetry } from '@grammyjs/auto-retry';
 
-// ... imports
-
 async function start() {
-  console.log(`🚀 Запуск бота... Режим: ${IS_PROD ? 'WEBHOOK' : 'POLLING'}`);
+  console.log('🚀 Запуск бота (long polling)...');
 
   // === Auto-Retry для обработки Rate Limits ===
+  // С long polling нет таймаута webhook (10с), поэтому retry можно делать агрессивнее
   bot.api.config.use(autoRetry({
-    maxRetryAttempts: 1,   // Максимум 1 повтор, чтобы не блокировать webhook
-    maxDelaySeconds: 2,    // Макс 2сек ожидания (вместо 5с)
+    maxRetryAttempts: 3,   // 3 попытки при 429
+    maxDelaySeconds: 5,    // ждём до 5с между попытками
   }));
 
   // Загрузка всех балансов пользователей в кэш
@@ -118,10 +116,7 @@ async function start() {
     return next();
   });
 
-  // Логирование update'ов которые НЕ попали ни в один handler
-  // Если update прошёл через ВСЮ цепочку middleware, но ни один handler не обработал,
-  // grammY просто вызывает next() и update пропадает молча.
-  // Этот middleware должен быть ПОСЛЕДНИМ (после регистрации handler'ов).
+
 
   // === Антиспам защита (только для личных сообщений) ===
   bot.use(async (ctx, next) => {
