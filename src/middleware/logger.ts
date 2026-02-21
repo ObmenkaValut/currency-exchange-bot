@@ -2,6 +2,7 @@ import { Context, NextFunction } from 'grammy';
 import { BUTTONS } from '../config/constants';
 
 const BUTTON_VALUES = Object.values(BUTTONS);
+let lastUpdateId = 0;
 
 /**
  * Определяет тип события для логирования
@@ -41,6 +42,14 @@ const getType = (ctx: Context): string => {
  */
 export async function loggerMiddleware(ctx: Context, next: NextFunction) {
   const start = Date.now();
+  const updateId = ctx.update.update_id;
+
+  // Детекция пропусков в последовательности update_id
+  if (lastUpdateId > 0 && updateId !== lastUpdateId + 1) {
+    const gap = updateId - lastUpdateId - 1;
+    console.warn(`🚨 ПРОПУСК update_id! Ожидался ${lastUpdateId + 1}, получен ${updateId} (пропущено ${gap} update'ов)`);
+  }
+  lastUpdateId = updateId;
 
   // Формирование информации о пользователе
   const user = ctx.from?.username
@@ -48,12 +57,13 @@ export async function loggerMiddleware(ctx: Context, next: NextFunction) {
     : ctx.from?.first_name || 'неизвестный';
   const uid = ctx.from?.id || 'нет ID';
   const chat = ctx.chat?.type || 'неизвестный чат';
+  const senderChat = (ctx.message as any)?.sender_chat?.title;
 
-  console.log(`⬇️ [${getType(ctx)}] ${user} (${uid}) в ${chat}`);
+  console.log(`⬇️ [${updateId}] [${getType(ctx)}] ${user} (${uid}) в ${chat}${senderChat ? ` от канала "${senderChat}"` : ''}`);
 
   await next();
 
   const duration = Date.now() - start;
-  console.log(`⬆️ Обработано за ${duration}мс`);
+  console.log(`⬆️ [${updateId}] Обработано за ${duration}мс`);
 }
 

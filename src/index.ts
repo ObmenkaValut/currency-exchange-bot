@@ -201,8 +201,7 @@ async function start() {
   await bot.api.deleteWebhook({ drop_pending_updates: true });
   console.log('📡 Webhook удалён, переходим на long polling...');
   bot.start({
-    allowed_updates: ['message', 'chat_member', 'callback_query', 'pre_checkout_query', 'my_chat_member'],
-    onStart: () => console.log('🔄 Long polling активирован. Бот получает update\'ы напрямую от Telegram.'),
+    onStart: () => console.log('🔄 Long polling активирован. Бот получает ВСЕ update\'ы от Telegram.'),
   });
 
   console.log('✅ Бот успешно запущен!');
