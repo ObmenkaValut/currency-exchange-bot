@@ -50,6 +50,12 @@ async function start() {
     await userBalanceService.deleteOldTransactions(TRANSACTION_RETENTION_DAYS);
   }, TRANSACTION_CLEANUP_INTERVAL);
 
+  // === Мониторинг памяти (каждые 30 минут) ===
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    console.log(`📊 Память: heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB, rss=${Math.round(mem.rss / 1024 / 1024)}MB`);
+  }, 30 * 60 * 1000);
+
   // === Плановые сообщения (закомментировано) ===
   console.log(`⏰ Плановые сообщения: каждые ${SCHEDULED_MESSAGE_INTERVAL_HOURS}ч в чат ${TARGET_CHAT_ID}`);
   setInterval(async () => {
@@ -198,10 +204,23 @@ async function start() {
 
   // === Long Polling — надёжный приём update'ов ===
   // Бот сам запрашивает update'ы у Telegram, ничего не теряется.
-  await bot.api.deleteWebhook({ drop_pending_updates: true });
+  await bot.api.deleteWebhook();
   console.log('📡 Webhook удалён, переходим на long polling...');
   bot.start({
-    onStart: () => console.log('🔄 Long polling активирован. Бот получает ВСЕ update\'ы от Telegram.'),
+    // ВАЖНО: передаём явно ВСЕ типы, чтобы сбросить старый фильтр от setWebhook.
+    // Без этого Telegram использует предыдущий allowed_updates, который НЕ включал
+    // business_message, edited_message и другие типы — из-за чего сообщения терялись.
+    allowed_updates: [
+      'message', 'edited_message',
+      'channel_post', 'edited_channel_post',
+      'business_connection', 'business_message', 'edited_business_message', 'deleted_business_messages',
+      'callback_query',
+      'inline_query', 'chosen_inline_result',
+      'shipping_query', 'pre_checkout_query',
+      'poll', 'poll_answer',
+      'my_chat_member', 'chat_member', 'chat_join_request',
+    ],
+    onStart: () => console.log('🔄 Long polling активирован. Бот получает ВСЕ типы update\'ов.'),
   });
 
   console.log('✅ Бот успешно запущен!');

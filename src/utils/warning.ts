@@ -11,7 +11,23 @@ const lastWarnings = new Map<number, WarningState>();
 // Очередь операций для каждого чата, чтобы предупреждения не перегоняли друг друга
 const warningQueues = new Map<number, Promise<void>>();
 
+// === Периодическая очистка устаревших записей (каждые 10 минут) ===
+setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
 
+    // Удаляем записи о предупреждениях, которые старше WARNING_EDIT_WINDOW
+    lastWarnings.forEach((state, chatId) => {
+        if (now - state.sentAt > WARNING_EDIT_WINDOW) {
+            lastWarnings.delete(chatId);
+            cleaned++;
+        }
+    });
+
+    if (cleaned > 0 || lastWarnings.size > 0 || warningQueues.size > 0) {
+        console.log(`🧹 Warning cleanup: удалено ${cleaned}, осталось lastWarnings=${lastWarnings.size}, queues=${warningQueues.size}`);
+    }
+}, 10 * 60 * 1000);
 
 const formatUser = (ctx: Context) => {
     const from = ctx.from;
@@ -64,8 +80,14 @@ export async function sendWarning(ctx: Context, text: string): Promise<void> {
         }
     }).catch((err) => {
         console.error(`❌ Критическая ошибка в очереди предупреждений (user=${formatUser(ctx)}):`, err instanceof Error ? err.message : err);
+    }).finally(() => {
+        // Очищаем очередь после завершения, чтобы не хранить resolved promise
+        if (warningQueues.get(chatId) === nextPromise) {
+            warningQueues.delete(chatId);
+        }
     });
 
     warningQueues.set(chatId, nextPromise);
     return nextPromise;
 }
+
