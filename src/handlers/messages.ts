@@ -30,6 +30,16 @@ const getMention = (from: From): string => {
   return `[${name}](tg://user?id=${from.id})`;
 };
 
+// Хелпер: является ли участник админом чата (при ошибке — нет)
+const isChatAdmin = async (ctx: Context, chatId: number, userId: number): Promise<boolean> => {
+  try {
+    const member = await ctx.api.getChatMember(chatId, userId);
+    return ['creator', 'administrator'].includes(member.status);
+  } catch {
+    return false;
+  }
+};
+
 // Хелпер: удалить сообщение юзера и отправить предупреждение
 const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: string) => {
   // КРИТИЧНО: Ждём удаления (с auto-retry если 429)
@@ -75,9 +85,23 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 2. Игнорируем ботов
+    // 2. Боты: пропускаем анонимных админов/посты от имени канала и ботов-админов чата,
+    //    остальных (спам-боты, гостевые боты) удаляем молча
     if (is_bot) {
-      console.log(`🤖 Бот ${userLog}, пропускаем`);
+      if (ctx.message.sender_chat) {
+        console.log(`🤖 Бот ${userLog} от имени чата ${ctx.message.sender_chat.id}, пропускаем`);
+        return;
+      }
+      if (await isChatAdmin(ctx, chatId, userId)) {
+        console.log(`🤖 Бот-админ ${userLog}, пропускаем`);
+        return;
+      }
+      try {
+        await ctx.api.deleteMessage(chatId, msgId);
+        console.log(`🗑️ Удалено сообщение бота ${userLog}, msgId=${msgId}`);
+      } catch (err) {
+        console.error(`❌ НЕ УДАЛОСЬ удалить сообщение бота ${userLog}, msgId=${msgId}:`, err instanceof Error ? err.message : String(err));
+      }
       return;
     }
 
