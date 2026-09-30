@@ -40,6 +40,16 @@ const isChatAdmin = async (ctx: Context, chatId: number, userId: number): Promis
   }
 };
 
+// Хелпер: удалить сообщение с логом результата
+const deleteMessage = async (ctx: Context, chatId: number, msgId: number, label: string) => {
+  try {
+    await ctx.api.deleteMessage(chatId, msgId);
+    console.log(`🗑️ Удалено сообщение ${label}, msgId=${msgId}`);
+  } catch (err) {
+    console.error(`❌ НЕ УДАЛОСЬ удалить сообщение ${label}, msgId=${msgId}:`, err instanceof Error ? err.message : String(err));
+  }
+};
+
 // Хелпер: удалить сообщение юзера и отправить предупреждение
 const deleteAndWarn = async (ctx: Context, chatId: number, msgId: number, text: string) => {
   // КРИТИЧНО: Ждём удаления (с auto-retry если 429)
@@ -61,8 +71,8 @@ export async function handleGroupMessage(ctx: Context) {
     // console.log(`⏭️ handleGroupMessage: пропуск (private/no chat)`);
     return;
   }
-  if (!ctx.message?.text || !ctx.from) {
-    console.log(`⏭️ handleGroupMessage: пропуск (нет текста или from), chat=${ctx.chat.id}`);
+  if (!ctx.message || !ctx.from) {
+    console.log(`⏭️ handleGroupMessage: пропуск (нет message или from), chat=${ctx.chat.id}`);
     return;
   }
 
@@ -72,11 +82,7 @@ export async function handleGroupMessage(ctx: Context) {
   const { id: userId, is_bot } = ctx.from;
   const { message_id: msgId } = ctx.message;
   const { id: chatId } = ctx.chat;
-  const text = ctx.message.text;
-  const mention = getMention(ctx.from);
   const userLog = `${ctx.from.first_name}${ctx.from.username ? ` (@${ctx.from.username})` : ''} [${userId}]`;
-
-  console.log(`🔍 handleGroupMessage: ${userLog}, msgId=${msgId}, len=${text.length}`);
 
   try {
     // 1. Админы без ограничений (мгновенная проверка по массиву)
@@ -85,34 +91,61 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 2. Боты: пропускаем анонимных админов/посты от имени канала и ботов-админов чата,
-    //    остальных (спам-боты, гостевые боты) удаляем молча
-    if (is_bot) {
-      if (ctx.message.sender_chat) {
-        console.log(`🤖 Бот ${userLog} от имени чата ${ctx.message.sender_chat.id}, пропускаем`);
+    // 2. Сообщения от имени чата: свой анонимный админ и автопересылка из
+    //    привязанного канала проходят, чужой канал — удаляем и баним
+    const senderChat = ctx.message.sender_chat;
+    if (senderChat) {
+      if (senderChat.id === chatId || ctx.message.is_automatic_forward) {
+        console.log(`📢 Сообщение от имени чата ${senderChat.id}, пропускаем`);
         return;
       }
-      if (await isChatAdmin(ctx, chatId, userId)) {
-        console.log(`🤖 Бот-админ ${userLog}, пропускаем`);
-        return;
-      }
+
+      await deleteMessage(ctx, chatId, msgId, `канала ${senderChat.id}`);
       try {
-        await ctx.api.deleteMessage(chatId, msgId);
-        console.log(`🗑️ Удалено сообщение бота ${userLog}, msgId=${msgId}`);
+        await ctx.api.banChatSenderChat(chatId, senderChat.id);
+        console.log(`⛔ Забанен канал ${senderChat.id} в чате ${chatId}`);
       } catch (err) {
-        console.error(`❌ НЕ УДАЛОСЬ удалить сообщение бота ${userLog}, msgId=${msgId}:`, err instanceof Error ? err.message : String(err));
+        console.error(`❌ НЕ УДАЛОСЬ забанить канал ${senderChat.id}:`, err instanceof Error ? err.message : String(err));
       }
       return;
     }
 
-    // 3. Проверка баланса
+    // 3. Боты: пропускаем только ботов-админов чата. Остальных (спам-боты,
+    //    гостевые боты) удаляем молча — НЕЗАВИСИМО от типа содержимого:
+    //    text, caption, rich_message и что там ещё придумают дальше.
+    if (is_bot) {
+      if (await isChatAdmin(ctx, chatId, userId)) {
+        console.log(`🤖 Бот-админ ${userLog}, пропускаем`);
+        return;
+      }
+
+      // guest_bot_caller_user — кто вызвал гостевого бота (типы grammY его ещё не знают)
+      const caller = (ctx.message as any).guest_bot_caller_user;
+      const callerLog = caller ? `, вызвал: ${caller.first_name || '?'} [${caller.id}]` : '';
+      const kind = ['text', 'caption', 'rich_message'].find((k) => k in ctx.message!) || 'без текста';
+
+      await deleteMessage(ctx, chatId, msgId, `бота ${userLog} (${kind})${callerLog}`);
+      return;
+    }
+
+    // 4. Дальше — только текстовые сообщения живых юзеров
+    if (!ctx.message.text) {
+      console.log(`⏭️ Не текстовое сообщение от ${userLog}, пропускаем`);
+      return;
+    }
+
+    const text = ctx.message.text;
+    const mention = getMention(ctx.from);
+    console.log(`🔍 handleGroupMessage: ${userLog}, msgId=${msgId}, len=${text.length}`);
+
+    // 5. Проверка баланса
     const t1 = Date.now();
     const paidBalance = await userBalanceService.getPaidBalance(userId.toString());
     console.log(`⏱️ getPaidBalance: ${Date.now() - t1}ms`);
     const isPaid = paidBalance > 0;
     const maxLen = isPaid ? MAX_LENGTH_PAID : MAX_LENGTH_FREE;
 
-    // 4. ЛИМИТ (free only) - проверяем ПЕРВЫМ, чтобы сообщение было корректным
+    // 6. ЛИМИТ (free only) - проверяем ПЕРВЫМ, чтобы сообщение было корректным
     if (!isPaid && limiterService.getCount(userId.toString()) >= FREE_DAILY_LIMIT) {
       await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`);
       console.log(`🚫 Лимит ${userLog}`);

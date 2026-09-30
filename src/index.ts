@@ -165,9 +165,11 @@ async function start() {
   registerPayments(bot);
   registerBroadcast(bot);
 
-  // Обработка текстовых сообщений в группах
+  // Обработка сообщений в группах — ВСЕ типы, а не только message:text.
+  // Спам-боты шлют rich_message (Bot API 10.1), у которого нет поля text,
+  // и фильтр по message:text их не ловил.
   bot
-    .on('message:text')
+    .on('message')
     .filter((ctx) => ['supergroup', 'group'].includes(ctx.chat?.type || ''), handleGroupMessage);
 
   // Fallback: ловим ВСЕ сообщения, которые НЕ попали в handler выше
