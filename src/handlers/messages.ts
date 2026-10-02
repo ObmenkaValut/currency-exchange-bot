@@ -30,6 +30,39 @@ const getMention = (from: From): string => {
   return `[${name}](tg://user?id=${from.id})`;
 };
 
+// Хелпер: есть ли иероглифы (китайские/японские) в строке
+const HAN_REGEX = /\p{Script=Han}/u;
+
+type Msg = NonNullable<Context['message']>;
+
+// Хелпер: все имена, связанные с сообщением — отправитель, канал,
+// автор пересланного оригинала и тот, кто вызвал гостевого бота
+const collectNames = (msg: Msg): string => {
+  const parts: (string | undefined)[] = [msg.from?.first_name, msg.from?.last_name, msg.from?.username];
+
+  if (msg.sender_chat && 'title' in msg.sender_chat) parts.push(msg.sender_chat.title);
+
+  const origin = msg.forward_origin;
+  if (origin) {
+    if (origin.type === 'user') {
+      parts.push(origin.sender_user.first_name, origin.sender_user.last_name, origin.sender_user.username);
+    } else if (origin.type === 'hidden_user') {
+      parts.push(origin.sender_user_name);
+    } else if (origin.type === 'chat') {
+      if ('title' in origin.sender_chat) parts.push(origin.sender_chat.title);
+      parts.push(origin.author_signature);
+    } else if (origin.type === 'channel') {
+      parts.push(origin.chat.title, origin.author_signature);
+    }
+  }
+
+  // guest_bot_caller_user — типы grammY его ещё не знают
+  const caller = (msg as any).guest_bot_caller_user;
+  if (caller) parts.push(caller.first_name, caller.last_name, caller.username);
+
+  return parts.filter(Boolean).join(' | ');
+};
+
 // Хелпер: является ли участник админом чата (при ошибке — нет)
 const isChatAdmin = async (ctx: Context, chatId: number, userId: number): Promise<boolean> => {
   try {
@@ -91,7 +124,15 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 2. Сообщения от имени чата: свой анонимный админ и автопересылка из
+    // 2. Иероглифы в любом имени, связанном с сообщением (отправитель, канал,
+    //    автор пересланного) — удаляем молча, независимо от типа содержимого
+    const names = collectNames(ctx.message);
+    if (HAN_REGEX.test(names)) {
+      await deleteMessage(ctx, chatId, msgId, `с иероглифами в имени от ${userLog} (имена: ${names})`);
+      return;
+    }
+
+    // 3. Сообщения от имени чата: свой анонимный админ и автопересылка из
     //    привязанного канала проходят, чужой канал — удаляем и баним
     const senderChat = ctx.message.sender_chat;
     if (senderChat) {
@@ -110,7 +151,7 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 3. Боты: пропускаем только ботов-админов чата. Остальных (спам-боты,
+    // 4. Боты: пропускаем только ботов-админов чата. Остальных (спам-боты,
     //    гостевые боты) удаляем молча — НЕЗАВИСИМО от типа содержимого:
     //    text, caption, rich_message и что там ещё придумают дальше.
     if (is_bot) {
@@ -128,7 +169,7 @@ export async function handleGroupMessage(ctx: Context) {
       return;
     }
 
-    // 4. Дальше — только текстовые сообщения живых юзеров
+    // 5. Дальше — только текстовые сообщения живых юзеров
     if (!ctx.message.text) {
       console.log(`⏭️ Не текстовое сообщение от ${userLog}, пропускаем`);
       return;
@@ -138,14 +179,14 @@ export async function handleGroupMessage(ctx: Context) {
     const mention = getMention(ctx.from);
     console.log(`🔍 handleGroupMessage: ${userLog}, msgId=${msgId}, len=${text.length}`);
 
-    // 5. Проверка баланса
+    // 6. Проверка баланса
     const t1 = Date.now();
     const paidBalance = await userBalanceService.getPaidBalance(userId.toString());
     console.log(`⏱️ getPaidBalance: ${Date.now() - t1}ms`);
     const isPaid = paidBalance > 0;
     const maxLen = isPaid ? MAX_LENGTH_PAID : MAX_LENGTH_FREE;
 
-    // 6. ЛИМИТ (free only) - проверяем ПЕРВЫМ, чтобы сообщение было корректным
+    // 7. ЛИМИТ (free only) - проверяем ПЕРВЫМ, чтобы сообщение было корректным
     if (!isPaid && limiterService.getCount(userId.toString()) >= FREE_DAILY_LIMIT) {
       await deleteAndWarn(ctx, chatId, msgId, `${mention}${MESSAGES.WARNINGS.LIMIT(botLink)}`);
       console.log(`🚫 Лимит ${userLog}`);
