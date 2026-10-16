@@ -7,3 +7,6 @@ export const enforceMapLimit = <K, V>(map: Map<K, V>, max: number): void => {
     const toDelete = Array.from(map.keys()).slice(0, map.size - max);
     toDelete.forEach((k) => map.delete(k));
 };
+
+/** Экранирует спецсимволы Markdown (_ * [ `) — для имён и любого чужого текста */
+export const escapeMarkdown = (text: string): string => text.replace(/([_*\[`])/g, '\\$1');

@@ -1,5 +1,6 @@
 import { Context } from 'grammy';
 import { MESSAGES, WELCOME_MESSAGE_TTL } from '../config/constants';
+import { escapeMarkdown } from '../utils/helpers';
 
 export async function handleNewMember(ctx: Context) {
     if (!ctx.chatMember) return;
@@ -14,7 +15,8 @@ export async function handleNewMember(ctx: Context) {
     if (isPresent && wasAbsent) {
         if (new_chat_member.user.is_bot) return;
 
-        const name = new_chat_member.user.first_name || 'User';
+        // Экранируем имя: `_` или `*` в нём ломали Markdown всего приветствия
+        const name = escapeMarkdown(new_chat_member.user.first_name || 'User');
         const text = MESSAGES.WARNINGS.WELCOME(name);
 
         try {

@@ -4,6 +4,7 @@ import { limiterService } from '../services/limiter';
 import { userBalanceService } from '../services/premium';
 import { moderationService } from '../services/moderation';
 import { sendWarning } from '../utils/warning';
+import { escapeMarkdown } from '../utils/helpers';
 import {
   BOT_USERNAME,
   MAX_LENGTH_FREE,
@@ -18,8 +19,6 @@ import {
 // Хелпер: проверка наличия эмодзи (без stateful regex)
 const hasEmoji = (text: string): boolean => emojiRegex().test(text);
 
-// Хелпер: экранирование спецсимволов Markdown
-const escapeMarkdown = (text: string) => text.replace(/([_*\[`])/g, '\\$1');
 
 const botLink = escapeMarkdown(`@${BOT_USERNAME}`);
 
