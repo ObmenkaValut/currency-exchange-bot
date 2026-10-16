@@ -15,7 +15,7 @@ export const MAX_POSTS_PER_PURCHASE = 100;
 // export const FREE_DAILY_LIMIT = 1;
 export const FREE_DAILY_LIMIT = 0;
 export const MAX_LENGTH_FREE = 120;
-export const MAX_LENGTH_PAID = 360;
+export const MAX_LENGTH_PAID = 1000; // было 360
 export const MAX_LOG_MESSAGE_LENGTH = 3000; // Макс. длина текста нарушения в логе
 
 // === AI ===
