@@ -44,7 +44,8 @@ export function registerCommands(bot: Bot) {
       const userId = ctx.from?.id;
       if (!userId) return;
 
-      const free = limiterService.getCount(userId.toString());
+      // PAID_ONLY: бесплатные посты отключены — счётчик не нужен
+      // const free = limiterService.getCount(userId.toString());
       const profile = await userBalanceService.getUserProfile(userId.toString());
 
       // Формат: 14:20 | 29.01
@@ -59,12 +60,15 @@ export function registerCommands(bot: Bot) {
       }
 
       let msg = `${MESSAGES.PROFILE.SECTION_AVAILABLE}\n` +
-        `${MESSAGES.PROFILE.FREE_K(free, FREE_DAILY_LIMIT)}\n` +
+        // PAID_ONLY: строка бесплатных постов скрыта. Старый вариант:
+        // `${MESSAGES.PROFILE.FREE_K(free, FREE_DAILY_LIMIT)}\n` +
         `${MESSAGES.PROFILE.PAID_K(profile.paidMessages)}\n` +
         `${MESSAGES.PROFILE.SECTION_ACTIVITY}\n` +
         `${MESSAGES.PROFILE.TOTAL_K(profile.totalPaidPosts)}\n` +
-        `${MESSAGES.PROFILE.LAST_K(dateStr)}\n` +
-        `${MESSAGES.PROFILE.PS}\n`;
+        `${MESSAGES.PROFILE.LAST_K(dateStr)}\n`;
+        // PAID_ONLY: примечание про обновление бесплатных постов скрыто. Старый вариант:
+        // `${MESSAGES.PROFILE.LAST_K(dateStr)}\n` +
+        // `${MESSAGES.PROFILE.PS}\n`;
       await ctx.reply(msg, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('❌ Профиль:', error instanceof Error ? error.message : error);
