@@ -14,7 +14,8 @@ import { registerBroadcast } from './handlers/broadcast';
 import { createWebhookRouter } from './handlers/webhook';
 import { loggerMiddleware } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_INTERVAL_HOURS, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, ALLOWED_GROUP_IDS } from './config/constants';
+import { getZonedDateTime } from './utils/helpers';
+import { MAX_MESSAGE_AGE, TRANSACTION_RETENTION_DAYS, TRANSACTION_CLEANUP_INTERVAL, MESSAGES, SCHEDULED_MESSAGE_TIME, SCHEDULED_MESSAGE_TIMEZONE, TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, ALLOWED_GROUP_IDS } from './config/constants';
 
 // === Конфигурация ===
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -56,18 +57,29 @@ async function start() {
     console.log(`📊 Память: heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB, rss=${Math.round(mem.rss / 1024 / 1024)}MB`);
   }, 30 * 60 * 1000);
 
-  // === Плановые сообщения (закомментировано) ===
-  console.log(`⏰ Плановые сообщения: каждые ${SCHEDULED_MESSAGE_INTERVAL_HOURS}ч в чат ${TARGET_CHAT_ID}`);
+  // === Плановые сообщения: раз в сутки в SCHEDULED_MESSAGE_TIME ===
+  // Раз в минуту сверяемся с часами — это не запрос к Telegram, а просто чтение времени.
+  // lastSentDate защищает от повторной отправки в тот же день, в т.ч. после рестарта.
+  // Если бот стартовал уже после времени отправки — сегодня не шлём, ждём следующего дня.
+  console.log(`⏰ Плановые сообщения: ежедневно в ${SCHEDULED_MESSAGE_TIME} (${SCHEDULED_MESSAGE_TIMEZONE}) в чат ${TARGET_CHAT_ID}`);
+  const startNow = getZonedDateTime(SCHEDULED_MESSAGE_TIMEZONE);
+  let lastSentDate = startNow.time >= SCHEDULED_MESSAGE_TIME ? startNow.date : '';
+
   setInterval(async () => {
+    if (!TARGET_CHAT_ID) return; // Пропускаем, если не настроено
+
+    const { date, time } = getZonedDateTime(SCHEDULED_MESSAGE_TIMEZONE);
+    if (time < SCHEDULED_MESSAGE_TIME || date === lastSentDate) return;
+    lastSentDate = date;
+
     try {
-      if (!TARGET_CHAT_ID) return; // Пропускаем, если не настроено
       const linkPreview = { is_disabled: true };
       await bot.api.sendMessage(TARGET_CHAT_ID, SCHEDULED_MESSAGE_TEXT, { parse_mode: 'Markdown', link_preview_options: linkPreview });
-      console.log('✅ Плановое сообщение отправлено');
+      console.log(`✅ Плановое сообщение отправлено (${date} ${time})`);
     } catch (error) {
       console.error('❌ Ошибка отправки планового сообщения:', error);
     }
-  }, SCHEDULED_MESSAGE_INTERVAL_HOURS * 60 * 60 * 1000);
+  }, 60 * 1000);
 
   await bot.api.setMyCommands([{ command: 'start', description: 'Перезапуск бота' }]);
 
