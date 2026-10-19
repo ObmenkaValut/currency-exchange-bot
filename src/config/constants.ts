@@ -50,7 +50,7 @@ export const TRANSACTION_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // Провер
 export const MAX_CACHE_SIZE = 10000;
 
 // === Плановые сообщения ===
-export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 3; // Периодичность в часах
+export const SCHEDULED_MESSAGE_INTERVAL_HOURS = 24; // Периодичность в часах (было 3)
 export const TARGET_CHAT_ID = process.env.TARGET_GROUP_ID; // ID чата, куда отправлять.
 export const SCHEDULED_MESSAGE_TEXT = '⚠️ *ВНИМАНИЕ. АДМИНИСТРАЦИЯ ЧАТА НЕ НЕСЕТ ОТВЕТСТВЕННОСТИ ЗА УЧАСТНИКОВ СДЕЛКИ.*';
 
